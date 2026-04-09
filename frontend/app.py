@@ -63,6 +63,17 @@ with st.sidebar:
     )
     
     duration = st.slider("Duration (minutes)", 30, 180, 60, 30)
+
+    with st.expander("🛠️ Advanced Settings", expanded=False):
+        enable_custom_staff = st.checkbox("Customize Staff Count", value=False)
+        if enable_custom_staff:
+            num_staff = st.slider("Number of Staff", min_value=1, max_value=20, value=6, step=1)
+            advanced_settings = {
+                "enable_custom_staff": True,
+                "num_staff": num_staff
+            }
+        else:
+            advanced_settings = {"enable_custom_staff": False}
     
     if st.button("Run Simulation", type="primary", use_container_width=True):
         with st.spinner("Running REAL simulation with your algorithms..."):
@@ -73,7 +84,8 @@ with st.sidebar:
                         "scheduler": scheduling_method,
                         "allocator": allocation_method,
                         "scenario": scenario,
-                        "duration_minutes": duration
+                        "duration_minutes": duration,
+                        "advanced_settings": advanced_settings
                     },
                     timeout=30
                 )
@@ -84,7 +96,8 @@ with st.sidebar:
                     st.session_state.last_config = {
                         "scheduler": scheduling_method,
                         "allocator": allocation_method,
-                        "scenario": scenario
+                        "scenario": scenario,
+                        "advanced_settings": advanced_settings
                     }
                     st.success("Simulation completed with REAL algorithm data!")
                 else:
@@ -100,9 +113,8 @@ if 'simulation_data' not in st.session_state:
     st.info("Configure parameters in sidebar and click **Run Simulation** to see REAL metrics from your algorithms")
     
     # Show what real data looks like
-    st.markdown("### Expected Output from Your Algorithms")
+    st.markdown("### Expected Output:")
     st.markdown("""
-    When simulation runs, you'll see **actual metrics computed by your scheduling logic**:
     - **Avg Waiting Time**: Calculated from `(completion_time - submission_time)` for all requests
     - **Avg Turnaround**: Total processing time including queue wait
     - **Throughput**: `total_processed / simulation_duration_hours`

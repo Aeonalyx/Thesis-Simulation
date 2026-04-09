@@ -34,6 +34,24 @@ DOCUMENT_COMPLEXITY = {
 
 COLLEGES = ['COE', 'CAS', 'CBA', 'CEGE', 'CS', 'IE']
 
+#======= STAFF GENERATION =====
+def generate_staff_pool(num_staff: int = 6, colleges: List[str] = None) -> List['StaffMember']:
+    """Generate a synthetic staff pool with configurable size & college distribution"""
+    if colleges is None:
+        colleges = COLLEGES
+    
+    staff = []
+    names = ["Maria Santos", "Juan Dela Cruz", "Ana Reyes", "Carlos Lim", 
+             "Luisa Gomez", "Ramon Aquino", "Elena Cruz", "Miguel Torres"]
+    
+    for i in range(num_staff):
+        staff.append(StaffMember(
+            staff_id=f"STAFF{i+1:03d}",
+            name=names[i % len(names)],
+            college_affiliation=colleges[i % len(colleges)]
+        ))
+    return staff
+
 # ===== DATA MODELS =====
 @dataclass
 class DocumentRequest:
@@ -133,28 +151,28 @@ class BaseAllocator:
 class CollegeBasedAllocator(BaseAllocator):
     def assign(self, request: DocumentRequest, submission_time: datetime) -> Optional[StaffMember]:
         candidates = [s for s in self.staff_pool 
-                     if s.college_affiliation == request.college and s.is_available]
+                     if s.college_affiliation == request.college and s.can_accept(submission_time)]
         return random.choice(candidates) if candidates else None
 
 class WorkloadBasedAllocator(BaseAllocator):
     def assign(self, request: DocumentRequest, submission_time: datetime) -> Optional[StaffMember]:
         college_staff = [s for s in self.staff_pool 
-                        if s.college_affiliation == request.college and s.is_available]
+                        if s.college_affiliation == request.college and s.can_accept(submission_time)]
         if college_staff:
             return min(college_staff, key=lambda s: s.total_assigned)
         
-        available = [s for s in self.staff_pool if s.is_available]
+        available = [s for s in self.staff_pool if s.can_accept(submission_time)]
         return min(available, key=lambda s: s.total_assigned) if available else None
 
 class PooledAllocator(BaseAllocator):
     def assign(self, request: DocumentRequest, submission_time: datetime) -> Optional[StaffMember]:
-        available = [s for s in self.staff_pool if s.is_available]
+        available = [s for s in self.staff_pool if s.can_accept(submission_time)]
         # Select staff who will be available soonest
         return min(available, key=lambda s: max(s.next_available_time, submission_time)) if available else None
 
 class QuotaFreeAllocator(BaseAllocator):
     def assign(self, request: DocumentRequest, submission_time: datetime) -> Optional[StaffMember]:
-        available = [s for s in self.staff_pool if s.is_available]
+        available = [s for s in self.staff_pool if s.can_accept(submission_time)]
         return min(available, key=lambda s: max(s.next_available_time, submission_time)) if available else None
 
 # ===== SIMPLIFIED SIMULATION ENGINE =====
@@ -166,10 +184,16 @@ class SimulationEngine:
     - Multiple allocators
     - Scenario-based synthetic request generation
     """
-    def __init__(self, scheduler_type: str, allocator_type: str):
+    def __init__(self, scheduler_type: str, allocator_type: str, staff_config: Optional[Dict] = None):
         # Scheduler type: 'FCFS' or 'Weighted'
+
         self.scheduler_type = scheduler_type.upper()
-        self.staff_pool = self._init_staff()
+        num_staff = 6 # Default staff count
+        if staff_config and staff_config.get('enable_custom_staff'):
+            num_staff = staff_config.get('num_staff', 6)
+        self.staff_pool = generate_staff_pool(num_staff)
+        print(f"✅ Staff pool created: {num_staff} members")
+
         self.allocator = self._create_allocator(allocator_type)
         self.completed: List[DocumentRequest] = []
         self.start_time = datetime.now()
@@ -235,6 +259,7 @@ class SimulationEngine:
 
     # Run the simulation
     def run(self, scenario: str = "baseline", duration_min: int = 60) -> Dict:
+        self.completed = []
         requests = self._generate_requests(scenario, duration_min)
         end_time = self.start_time + timedelta(minutes=duration_min)
 
