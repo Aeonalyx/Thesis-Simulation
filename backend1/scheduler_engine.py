@@ -953,11 +953,10 @@ class SimulationEngine:
         this just shows what the scenario represents.
         """
         scenario_requests = {
-            "baseline": 80,
-            "staff_absence": 70,
-            "peak_urgency": 100,
-            "workload_imbalance": 90
-        }.get(self.scenario, 80)
+            "baseline": 200,
+            "peak_urgency": 280,
+            "workload_imbalance": 240
+        }.get(self.scenario, 200)
         
         return f"({scenario_requests} requests arriving in one day)"
     
