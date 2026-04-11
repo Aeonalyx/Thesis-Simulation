@@ -13,18 +13,13 @@ CORS(app)
 def simulate():
     data = request.get_json()
     
-    scheduler_map = {
-        "FCFS": "FCFS",
-        "Weighted Priority-Based": "WEIGHTED"
-    }
-    
+    scheduler_map = {"FCFS": "FCFS", "Weighted Priority-Based": "WEIGHTED"}
     allocator_map = {
         "College-Based Assignment": "college_based",
         "Workload-Based Assignment with College Affiliation": "workload_based",
         "Pooled Scheduling": "pooled",
         "Quota-Free Allocation": "quota_free"
     }
-    
     scenario_map = {
         "Baseline": "baseline",
         "Staff Absence": "staff_absence",
@@ -33,9 +28,20 @@ def simulate():
     }
     
     try:
+        advanced = data.get('advanced_settings', {})
+        
+        # Build staff_config safely
+        staff_config = None
+        if advanced.get('enable_custom_staff') is True:
+            staff_config = {
+                'enable_custom_staff': True,
+                'num_staff': int(advanced.get('num_staff', 6))
+            }
+            
         engine = SimulationEngine(
             scheduler_type=scheduler_map.get(data['scheduler'], "FCFS"),
-            allocator_type=allocator_map.get(data['allocator'], "college_based")
+            allocator_type=allocator_map.get(data['allocator'], "college_based"),
+            staff_config=staff_config
         )
         
         metrics = engine.run(
