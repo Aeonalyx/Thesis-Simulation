@@ -50,12 +50,6 @@ allocator_type = st.sidebar.selectbox(
     help="How to assign requests to staff"
 )
 
-scenario = st.sidebar.selectbox(
-    "Scenario",
-    ["baseline", "peak_urgency", "workload_imbalance"],
-    help="Different request patterns and conditions"
-)
-
 num_staff = st.sidebar.slider(
     "Number of Staff",
     min_value=1,
@@ -63,6 +57,30 @@ num_staff = st.sidebar.slider(
     value=6,
     help="1 staff per college (6 colleges total)"
 )
+
+total_requests = st.sidebar.slider(
+        "Total Daily Requests", min_value=50, max_value=500, value=200, step=10,
+        help="Volume of requests arriving in one day"
+    )
+
+enable_absence = st.sidebar.checkbox("Enable Staff Absence", value=False)
+num_absent = 0
+if enable_absence:
+    num_absent = st.sidebar.slider(
+        "Number of Absent Staff", min_value=1, max_value=max(1, num_staff-1), value=1, step=1,
+        help="Staff removed before simulation starts"
+    )
+
+urgency_base = st.sidebar.slider(
+    "Average Urgency Level (1-10)", min_value=1, max_value=10, value=5, step=1,
+    help="Higher = more urgent requests in the queue"
+    )
+
+imbalance_factor = st.sidebar.slider(
+    "College Workload Imbalance (0-100%)", min_value=0, max_value=100, value=0, step=5,
+    help="0% = balanced across colleges, 100% = COE gets heavy overload"
+    )
+
 
 quota_limit = st.sidebar.slider(
     "Daily Quota per Staff",
@@ -83,19 +101,30 @@ if "simulation_engine" not in st.session_state:
 if "simulation_results" not in st.session_state:
     st.session_state.simulation_results = None
 
-# Only run simulation when button clicked (not on every re-render)
 if st.sidebar.button("🚀 RUN SIMULATION", use_container_width=True):
     with st.spinner("⏳ Running simulation..."):
+        # Calculate effective staff (total - absent)
+        effective_staff = max(1, num_staff - num_absent)
+        
+        # Build custom config dict
+        custom_config = {
+            "total_requests": total_requests,
+            "enable_absence": enable_absence,
+            "num_absent_staff": num_absent,
+            "urgency_base": urgency_base,
+            "imbalance_factor": imbalance_factor
+        }
+        
         engine = SimulationEngine(
             scheduler_type=scheduler_type,
             allocator_type=allocator_type,
             staff_config={
                 "enable_custom_staff": True,
-                "num_staff": num_staff,
+                "num_staff": effective_staff,  
                 "quota_limit": quota_limit
             }
         )
-        results = engine.run(scenario=scenario)
+        results = engine.run(custom_config=custom_config) 
         
         # Store in session state (persists across interactions)
         st.session_state.simulation_engine = engine
@@ -121,8 +150,7 @@ if st.session_state.simulation_results and st.session_state.simulation_engine:
     
     with col1:
         processed = results['total_processed']
-        scenario_requests = {"baseline": 200, "peak_urgency": 280, "workload_imbalance": 240}
-        expected = scenario_requests.get(scenario, 200)
+        expected = total_requests
         completion_pct = (processed / expected * 100) if expected > 0 else 0
         st.metric(
             "Total Processed",
