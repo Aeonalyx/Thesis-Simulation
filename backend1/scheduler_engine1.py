@@ -839,109 +839,68 @@ class SimulationEngine:
         }
         return allocators.get(allocator_type, CollegeBasedAllocator(self.staff_pool))
     
-    def _generate_requests(self, scenario: str) -> List[DocumentRequest]:
+    def _generate_requests(self, custom_config: Dict = None) -> List[DocumentRequest]:
         """
-        Generate synthetic document requests for a SINGLE DAY.
-        
-        TOTAL REQUESTS FIXED (entire day's intake):
-        - "baseline": 80 requests (day's total volume)
-        - "staff_absence": 70 requests
-        - "peak_urgency": 100 requests
-        - "workload_imbalance": 90 requests
-        
-        UNEVEN DISTRIBUTION within single day:
-        - Morning peak (hours 8-10): 60% of requests
-        - Afternoon slump (hours 14-16): 20% of requests  
-        - Evening (hours 16+): 20% of requests
-        
-        All requests arrive on DAY 0 (that single day).
-        Processing continues until all completed (may span multiple days).
+        Generate synthetic requests using SLIDER-BASED configuration.
+        Fixed scenarios removed. Everything is now dynamically controlled.
         """
-        self.scenario = scenario
+        config = custom_config or {}
         requests = []
         
-        # Scenario-based TOTAL request counts (FIXED for one day)
-        total_requests = {
-            "baseline": 200,               # Day's total volume
-            "peak_urgency": 280,           # More requests, higher urgency
-            "workload_imbalance": 240     # More to show imbalance
-        }.get(scenario, 200)
+        # 1. Extract slider values (with safe defaults)
+        total_requests = config.get('total_requests', 200)
+        urgency_base = config.get('urgency_base', 5)
+        imbalance_factor = config.get('imbalance_factor', 0) / 100.0  # 0.0 to 1.0
         
-        # Scenario-specific urgency distribution
-        urgency_range = {
-            "baseline": [3, 4, 5, 6, 7],
-            "peak_urgency": [7, 8, 9, 10],
-            "staff_absence": [3, 4, 5, 6, 7],
-            "workload_imbalance": [3, 4, 5, 6, 7]
-        }.get(scenario, [3, 4, 5, 6, 7])
-        
-        # College list with population weights
+        # 2. College distribution with dynamic imbalance
         college_list = list(COLLEGE_POPULATION.keys())
         college_weights = list(COLLEGE_POPULATION.values())
         
-        # For workload imbalance, increase COE weight to 35% (simulate overflow)
-        if scenario == "workload_imbalance":
-            college_list = list(COLLEGE_POPULATION.keys())
-            college_weights = [0.35 if c == 'COE' else 0.65 * COLLEGE_POPULATION[c] / sum([COLLEGE_POPULATION[x] for x in COLLEGE_POPULATION if x != 'COE']) for c in college_list]
-        
+        if imbalance_factor > 0:
+            # Boost COE weight proportionally, then renormalize
+            coe_idx = college_list.index('COE')
+            college_weights[coe_idx] += imbalance_factor * 0.3
+            total_w = sum(college_weights)
+            college_weights = [w / total_w for w in college_weights]
+            
+        # 3. Dynamic urgency range based on slider base (1-10)
+        if urgency_base >= 8:
+            urgency_range = list(range(urgency_base, 11))      # High only
+        elif urgency_base <= 3:
+            urgency_range = list(range(1, urgency_base + 2))   # Low only
+        else:
+            urgency_range = list(range(max(1, urgency_base-2), min(10, urgency_base+3)))
+            
         doc_types = list(DOCUMENT_COMPLEXITY.keys())
         requester_types = list(REQUESTER_PRIORITY.keys())
         
-        # Distribution: morning (60%), afternoon (20%), evening (20%)
+        # 4. Time distribution (60% morning, 20% afternoon, 20% evening)
         morning_count = int(total_requests * 0.6)
         afternoon_count = int(total_requests * 0.2)
         evening_count = total_requests - morning_count - afternoon_count
         
-        # All on day 0, but scattered throughout
         current_request_id = 0
         
-        # Morning peak: hours 8-10 (represented as 0.33-0.42 of day)
-        for i in range(morning_count):
-            hours_in_day = random.uniform(8, 10)
-            submission_time = self.start_time + timedelta(hours=hours_in_day)
-            
-            college = random.choices(college_list, weights=college_weights, k=1)[0]
-            requests.append(DocumentRequest(
-                request_id=f"REQ{current_request_id:04d}",
-                college=college,
-                document_type=random.choice(doc_types),
-                urgency=random.choice(urgency_range),
-                requester_type=random.choice(requester_types),
-                submission_time=submission_time
-            ))
-            current_request_id += 1
-        
-        # Afternoon slump: hours 14-16
-        for i in range(afternoon_count):
-            hours_in_day = random.uniform(14, 16)
-            submission_time = self.start_time + timedelta(hours=hours_in_day)
-            
-            college = random.choices(college_list, weights=college_weights, k=1)[0]
-            requests.append(DocumentRequest(
-                request_id=f"REQ{current_request_id:04d}",
-                college=college,
-                document_type=random.choice(doc_types),
-                urgency=random.choice(urgency_range),
-                requester_type=random.choice(requester_types),
-                submission_time=submission_time
-            ))
-            current_request_id += 1
-        
-        # Evening: hours 16-24
-        for i in range(evening_count):
-            hours_in_day = random.uniform(16, 24)
-            submission_time = self.start_time + timedelta(hours=hours_in_day)
-            
-            college = random.choices(college_list, weights=college_weights, k=1)[0]
-            requests.append(DocumentRequest(
-                request_id=f"REQ{current_request_id:04d}",
-                college=college,
-                document_type=random.choice(doc_types),
-                urgency=random.choice(urgency_range),
-                requester_type=random.choice(requester_types),
-                submission_time=submission_time
-            ))
-            current_request_id += 1
+        # Helper to avoid code duplication
+        def _add_requests(count: int, start_hour: float, end_hour: float):
+            nonlocal current_request_id
+            for _ in range(count):
+                hours_in_day = random.uniform(start_hour, end_hour)
+                submission_time = self.start_time + timedelta(hours=hours_in_day)
+                college = random.choices(college_list, weights=college_weights, k=1)[0]
+                requests.append(DocumentRequest(
+                    request_id=f"REQ{current_request_id:04d}",
+                    college=college,
+                    document_type=random.choice(doc_types),
+                    urgency=random.choice(urgency_range),
+                    requester_type=random.choice(requester_types),
+                    submission_time=submission_time
+                ))
+                current_request_id += 1
+                
+        _add_requests(morning_count, 8, 10)
+        _add_requests(afternoon_count, 14, 16)
+        _add_requests(evening_count, 16, 24)
         
         return requests
     
@@ -960,7 +919,9 @@ class SimulationEngine:
         
         return f"({scenario_requests} requests arriving in one day)"
     
-    def run(self, scenario: str = "baseline") -> Dict:
+    def run(self, custom_config: Dict = None) -> Dict:
+
+        self.scenario = "custom"
         """
         MATHEMATICAL SIMULATION - Calculate outcomes instantly, no time-based simulation.
         
@@ -974,7 +935,7 @@ class SimulationEngine:
         """
         
         print(f"\n{'='*70}")
-        print(f"🎬 STARTING SIMULATION: {scenario.upper()}")
+        print(f"🎬 STARTING SIMULATION: {custom_config}")
         print(f"   Staff available: {len(self.staff_pool)}/{len(COLLEGES)}")
         real_equiv = self._approximate_real_days()
         print(f"   Day 0: {real_equiv}")
@@ -990,7 +951,7 @@ class SimulationEngine:
         
         # STEP 1: Generate all requests for this day
         print(f"\n📋 Step 1: Generating requests...")
-        requests = self._generate_requests(scenario)
+        requests = self._generate_requests(custom_config)
         print(f"   Total requests arriving: {len(requests)}")
         
         # STEP 2: FCFS requires no priority calculation
