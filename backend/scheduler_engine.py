@@ -258,33 +258,44 @@ class SimulationEngine:
         return requests
 
     # Run the simulation
-    def run(self, scenario: str = "baseline", duration_min: int = 60) -> Dict:
+    def run(self, scenario: str = "baseline", duration_min: int = 60, preloaded_requests: Optional[List[DocumentRequest]] = None) -> Dict:
         self.completed = []
-        requests = self._generate_requests(scenario, duration_min)
+        requests = []
+        
+        # ===== SYNC WITH QUEUE OR AUTO-GENERATE =====
+        if preloaded_requests and len(preloaded_requests) > 0:
+            # Use exact queue state
+            requests = preloaded_requests.copy()
+            # Normalize times to fit current simulation window
+            for i, req in enumerate(requests):
+                req.submission_time = self.start_time + timedelta(minutes=i * (duration_min / max(len(requests), 1)))
+                req.assignment_time = None
+                req.completion_time = None
+                req.assigned_staff = None
+        else:
+            # Fallback to auto-generation
+            requests = self._generate_requests(scenario, duration_min)
+
         end_time = self.start_time + timedelta(minutes=duration_min)
 
-        # Assign priorities if using Weighted scheduler
-        simulation_start = self.start_time
-        if self.scheduler_type == "WEIGHTED":
-            for req in requests:
-                req.calculate_priority(simulation_start)
-
-        # Sort requests according to scheduler
+        # Sort & prioritize
         if self.scheduler_type == "FCFS":
             sorted_requests = sorted(requests, key=lambda r: r.submission_time)
         elif self.scheduler_type == "WEIGHTED":
+            for req in requests:
+                req.calculate_priority(self.start_time)
             sorted_requests = sorted(requests, key=lambda r: r.priority_score, reverse=True)
         else:
             raise ValueError(f"Unknown scheduler type: {self.scheduler_type}")
 
-        # Process each request
+        # Process requests (same logic as before)
         for req in sorted_requests:
             if req.submission_time > end_time:
-                continue  # Skip requests beyond simulation duration
+                continue
 
             staff = self.allocator.assign(req, req.submission_time)
             if not staff:
-                continue  # No available staff
+                continue
 
             assignment_time = max(req.submission_time, staff.next_available_time)
             req.assignment_time = assignment_time
@@ -293,7 +304,6 @@ class SimulationEngine:
             base_mins = DOCUMENT_COMPLEXITY[req.document_type] * 3
             processing_time = timedelta(minutes=random.uniform(base_mins*0.8, base_mins*1.2))
 
-            # Update staff availability
             staff.assign_request(assignment_time, processing_time)
             req.completion_time = assignment_time + processing_time
             self.completed.append(req)
