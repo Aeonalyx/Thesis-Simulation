@@ -33,12 +33,12 @@ REQUESTER_PRIORITY = {
     'Regular Student': 3         # Can wait longer
 }
 
-# DOCUMENT_COMPLEXITY: Some documents take longer (multiplier on base time in DAYS)
+# DOCUMENT_COMPLEXITY: Some documents take longer (multiplier on base time in HOURS)
 DOCUMENT_COMPLEXITY = {
-    'Transcript of Records': 3,         # Takes 3 days
-    'Certificate of Enrollment': 2,     # Takes 2 days
-    'Honorable Dismissal': 4,          # Takes 4 days
-    'Certification': 1                  # Takes 1 day
+    'Transcript of Records': 3,         # Takes 3 hrs
+    'Certificate of Enrollment': 2,     # Takes 2 hrs
+    'Honorable Dismissal': 4,          # Takes 4 hrs
+    'Certification': 1                  # Takes 1 hrs
 }
 
 # COLLEGES: List of all colleges in the system
@@ -410,7 +410,7 @@ class BaseAllocator:
         """
         self.staff_pool = staff_pool
     
-    def assign(self, request: DocumentRequest, current_time: datetime) -> Optional[StaffMember]:
+    def assign(self, request: DocumentRequest, current_time: datetime, quota_tracker: Dict = None) -> Optional[StaffMember]:
         """
         Find and return a staff member to handle this request.
         
@@ -453,13 +453,13 @@ class CollegeBasedAllocator(BaseAllocator):
     - When cross-college help isn't possible
     """
     
-    def assign(self, request: DocumentRequest, current_time: datetime) -> Optional[StaffMember]:
+    def assign(self, request: DocumentRequest, current_time: datetime, quota_tracker: Dict = None, req_day: int = None) -> Optional[StaffMember]:
         """
         Find an available staff member from the same college.
         
         CONSTRAINTS CHECKED:
         1. Same college: s.college_affiliation == request.college
-        2. Available now: s.can_accept(current_time)
+        2. Available now: s.is_available
         3. Under quota: s.can_accept_quota() - NOT over the 20 limit
         
         SELECTION: random.choice() if multiple candidates
@@ -482,10 +482,29 @@ class CollegeBasedAllocator(BaseAllocator):
         candidates = [
             s for s in self.staff_pool 
             if s.college_affiliation == request.college 
-            and s.can_accept(current_time)
-            and s.can_accept_quota()  # NEW: Must not be over quota
-        ]
-        return random.choice(candidates) if candidates else None
+            and s.is_available
+            and (
+                quota_tracker is None or 
+                quota_tracker.get(s.staff_id, {}).get(req_day, 0) < s.quota_limit
+                )
+                ]
+        
+        if candidates:
+            return min(candidates, key=lambda s: s.next_available_time)
+        
+        # 🔑 PASTE NEXT-DAY SEARCH HERE ▼
+        for day in range(req_day + 1, req_day + 30):
+            candidates = [
+                s for s in self.staff_pool 
+                if s.college_affiliation == request.college 
+                and s.is_available
+                and quota_tracker.get(s.staff_id, {}).get(day, 0) < s.quota_limit
+            ]
+            if candidates:
+                return min(candidates, key=lambda s: s.next_available_time)
+        # 🔑 PASTE NEXT-DAY SEARCH HERE ▲
+        
+        return None
 
 
 # ============================================================================
@@ -521,7 +540,7 @@ class WorkloadBasedAllocator(BaseAllocator):
     - More consistent avg_waiting_time
     """
     
-    def assign(self, request: DocumentRequest, current_time: datetime) -> Optional[StaffMember]:
+    def assign(self, request: DocumentRequest, current_time: datetime, quota_tracker: Dict = None, req_day: int = None) -> Optional[StaffMember]:
         """
         Two-tier assignment with QUOTA ENFORCEMENT and FLEXIBLE FALLBACK.
         
@@ -549,9 +568,12 @@ class WorkloadBasedAllocator(BaseAllocator):
         college_staff = [
             s for s in self.staff_pool 
             if s.college_affiliation == request.college 
-            and s.can_accept(current_time)
-            and s.can_accept_quota()  # NEW: Check quota
-        ]
+            and s.is_available
+            and (
+                quota_tracker is None or 
+                quota_tracker.get(s.staff_id, {}).get(req_day, 0) < s.quota_limit
+                )  # NEW: Check quota
+                    ]
         
         if college_staff:
             return min(college_staff, key=lambda s: s.total_assigned)
@@ -559,14 +581,30 @@ class WorkloadBasedAllocator(BaseAllocator):
         # TIER 2: ANY college, under-quota staff (flexible fallback)
         available = [
             s for s in self.staff_pool 
-            if s.can_accept(current_time)
-            and s.can_accept_quota()  # NEW: Check quota
+            if s.is_available
+            and (
+                quota_tracker is None or 
+                quota_tracker.get(s.staff_id, {}).get(req_day, 0) < s.quota_limit
+            )  # NEW: Check quota
         ]
         
+        
+        
+        # TIER 3: Nobody available and under quota
         if available:
             return min(available, key=lambda s: s.total_assigned)
         
-        # TIER 3: Nobody available and under quota
+        # 🔑 PASTE NEXT-DAY SEARCH HERE ▼
+        for day in range(req_day + 1, req_day + 30):
+            candidates = [
+                s for s in self.staff_pool 
+                if s.is_available
+                and (quota_tracker is None or quota_tracker.get(s.staff_id, {}).get(req_day, 0) < s.quota_limit)
+            ]
+            if candidates:
+                return min(candidates, key=lambda s: s.total_assigned)
+        # 🔑 PASTE NEXT-DAY SEARCH HERE ▲
+        
         return None
 
 
@@ -605,7 +643,7 @@ class PooledAllocator(BaseAllocator):
     - Highest throughput (processes most requests)
     """
     
-    def assign(self, request: DocumentRequest, current_time: datetime) -> Optional[StaffMember]:
+    def assign(self, request: DocumentRequest, current_time: datetime, quota_tracker: Dict = None, req_day: int = None) -> Optional[StaffMember]:
         """
         Find available, under-quota staff and picking whoever becomes free soonest.
         
@@ -628,12 +666,26 @@ class PooledAllocator(BaseAllocator):
         """
         available = [
             s for s in self.staff_pool 
-            if s.can_accept(current_time)
-            and s.can_accept_quota()  # NEW: Check quota
+            if s.is_available
+            and (
+                quota_tracker is None or 
+                quota_tracker.get(s.staff_id, {}).get(req_day, 0) < s.quota_limit
+            )  # NEW: Check quota
         ]
+        
         
         if available:
             return min(available, key=lambda s: s.next_available_time)
+        
+        # 🔑 PASTE NEXT-DAY SEARCH HERE ▼
+        for day in range(req_day + 1, req_day + 30):
+            candidates = [
+                s for s in self.staff_pool 
+                if s.is_available
+            ]
+            if candidates:
+                return min(candidates, key=lambda s: s.next_available_time)
+        # 🔑 PASTE NEXT-DAY SEARCH HERE ▲
         
         return None
 
@@ -666,26 +718,38 @@ class QuotaFreeAllocator(BaseAllocator):
     Or: "What if we removed daily limits for high-priority staff?"
     """
     
-    def assign(self, request: DocumentRequest, current_time: datetime) -> Optional[StaffMember]:
+    def assign(self, request: DocumentRequest, current_time: datetime, quota_tracker: Dict = None, req_day : int = None) -> Optional[StaffMember]:
         """
         Find available college-specialist staff with NO quota limit.
         
         LOGIC:
         - Same college: s.college_affiliation == request.college
-        - Available now: s.can_accept(current_time)
+        - Available now: s.is_available
         - NO quota check - unlimited capacity
         - Selection: Least busy (by next_available_time)
         """
         candidates = [
             s for s in self.staff_pool 
             if s.college_affiliation == request.college 
-            and s.can_accept(current_time)
+            and s.is_available
             # NO quota check - absolutely UNLIMITED
         ]
         
         if candidates:
             # Pick least busy (whoever has earliest next_available_time)
             return min(candidates, key=lambda s: s.next_available_time)
+        
+        if candidates:
+            return min(candidates, key=lambda s: s.next_available_time)
+        
+        for day in range(req_day + 1, req_day + 30):
+            candidates = [
+                s for s in self.staff_pool 
+                if s.college_affiliation == request.college 
+                and s.is_available
+            ]
+            if candidates:
+                return min(candidates, key=lambda s: s.next_available_time)
         
         return None
 
@@ -761,6 +825,7 @@ class SimulationEngine:
         
         # STEP 4: Create allocator
         self.allocator = self._create_allocator(allocator_type)
+        self.allocator_type = allocator_type.lower()
         print(f"✅ Allocator: {allocator_type}")
         
         # STEP 5: Initialize tracking variables
@@ -920,136 +985,110 @@ class SimulationEngine:
         return f"({scenario_requests} requests arriving in one day)"
     
     def run(self, custom_config: Dict = None) -> Dict:
-
-        self.scenario = "custom"
         """
-        MATHEMATICAL SIMULATION - Calculate outcomes instantly, no time-based simulation.
-        
-        Instead of simulating actual passage of time (slow with large timedeltas),
-        we calculate:
-        1. Staff capacity (avg processing time per request)
-        2. Queue wait times (based on arrival pattern + capacity)
-        3. Total completion time (all requests / capacity per day)
-        
-        This runs in milliseconds, not minutes!
+        SIMULATION ENGINE - Now uses allocators with working hours & daily quota.
         """
-        
         print(f"\n{'='*70}")
         print(f"🎬 STARTING SIMULATION: {custom_config}")
         print(f"   Staff available: {len(self.staff_pool)}/{len(COLLEGES)}")
         real_equiv = self._approximate_real_days()
         print(f"   Day 0: {real_equiv}")
         print(f"{'='*70}")
-        
-        # Reset for fresh simulation
+    
+    # ✅ KEEP: Reset state
+        self.scenario = custom_config.get('scenario', 'custom') if custom_config else 'custom'
         self.completed = []
         self.waiting_queue = []
-        
-        # Track which colleges are missing staff
-        staffed_colleges = set(s.college_affiliation for s in self.staff_pool)
-        missing_colleges = set(COLLEGES) - staffed_colleges
-        
-        # STEP 1: Generate all requests for this day
+        self.start_time = self.start_time.replace(hour=8, minute=0, second=0, microsecond=0)
+    
+    # ✅ KEEP: Generate & sort requests
         print(f"\n📋 Step 1: Generating requests...")
         requests = self._generate_requests(custom_config)
         print(f"   Total requests arriving: {len(requests)}")
-        
-        # STEP 2: FCFS requires no priority calculation
-        print(f"\n📊 Step 2: Priority calculation skipped (FCFS)")
-        
-        # STEP 3: Sort requests by scheduler
-        print(f"\n🔄 Step 3: Sorting requests...")
-        if self.scheduler_type == "FCFS":
-            sorted_requests = sorted(requests, key=lambda r: r.submission_time)
-            print(f"   Order: By submission time (oldest first)")
-        else:
-            raise ValueError(f"Unknown scheduler: {self.scheduler_type}")
-        
-        # STEP 4: MATHEMATICAL ASSIGNMENT WITH COLLEGE-BASED ALLOCATION
-        print(f"\n⚙️  Step 4: Assigning requests with college-based quota (20/staff/day)...")
-        
-        # Track requests assigned per college per day
-        # Key: (day, college), Value: count of requests assigned that day
-        daily_college_quota = {}
-        
+    
+        print(f"\n🔄 Step 2: Sorting requests (FCFS)...")
+        sorted_requests = sorted(requests, key=lambda r: r.submission_time)
+    
+    # 🔑 NEW: Daily quota tracker per staff (not per college!)
+        quota_tracker: Dict[str, Dict[int, int]] = {}  # {staff_id: {day_idx: count}}
+    
+        print(f"\n⚙️  Step 3: Assigning requests via {self.allocator_type} allocator...")
+    
         for idx, req in enumerate(sorted_requests):
-            # What day does this request arrive?
-            arrival_hours = (req.submission_time - self.start_time).total_seconds() / 3600
-            req_arrival_day = int(arrival_hours / 24)
-            
-            # Find the first day when this college's staff has quota available
-            # Start from arrival day and keep checking forward
-            assignment_day = req_arrival_day
-            while True:
-                quota_key = (assignment_day, req.college)
-                assigned_this_day = daily_college_quota.get(quota_key, 0)
-                
-                if assigned_this_day < 20:
-                    # Found a day with available quota, use it
-                    break
-                else:
-                    # This day is full, try next day
-                    assignment_day += 1
-            
-            # Set assignment time
-            if assignment_day == req_arrival_day:
-                # Same day as arrival - assign at submission time
-                assignment_time = req.submission_time
-            else:
-                # Future day - assign at 8am
-                assignment_time = self.start_time + timedelta(days=assignment_day, hours=8)
-            
-            # Find the college's assigned staff (1:1 college-to-staff)
-            college_staff = [s for s in self.staff_pool if s.college_affiliation == req.college]
-            if not college_staff:
-                # No staff for this college - add to waiting queue
+            # 🔑 CRITICAL: Ask the ALLOCATOR for assignment (this is what makes strategies work)
+            req_day = int((req.submission_time - self.start_time).total_seconds() // 86400)
+            staff = self.allocator.assign(req, self.start_time, quota_tracker, req_day)
+            if staff is None:
                 self.waiting_queue.append(req)
                 continue
-            staff = college_staff[0]
             
-            # Calculate queue wait time
-            queue_wait_hours = (assignment_time - req.submission_time).total_seconds() / 3600
-            
-            req.assignment_time = assignment_time
+        # Calculate assignment time (respect working hours)
+            assign_time = max(req.submission_time, staff.next_available_time)
+            assign_time = self._snap_to_work_hours(assign_time)
+        
+        # Processing time with variation
+            base_days = DOCUMENT_COMPLEXITY.get(req.document_type, 1.0)
+            proc_days = random.uniform(base_days * 0.8, base_days * 1.2)
+        
+        # ✅ USE WORKING HOURS HELPER (8 AM - 5 PM)
+            comp_time = self._process_with_work_hours(assign_time, proc_days)
+        
+        # Update request & staff state
+            req.assignment_time = assign_time
+            req.completion_time = comp_time
             req.assigned_staff = staff.staff_id
-            
-            # Calculate processing time in days (±20% variation)
-            base_days = DOCUMENT_COMPLEXITY[req.document_type]
-            processing_days = random.uniform(base_days * 0.8, base_days * 1.2)
-            
-            # Completion = assignment + processing (all requests process in PARALLEL)
-            req.completion_time = assignment_time + timedelta(days=processing_days)
-            
-            # Update quota counter for assignment day
-            quota_key = (assignment_day, req.college)
-            daily_college_quota[quota_key] = daily_college_quota.get(quota_key, 0) + 1
-            
+            staff.next_available_time = comp_time
+            staff.total_assigned += 1  # For "least loaded" selection in allocators
+        
+        # 🔑 UPDATE DAILY QUOTA TRACKER (per staff, per day)
+            quota_tracker.setdefault(staff.staff_id, {})[req_day] = \
+                quota_tracker.get(staff.staff_id, {}).get(req_day, 0) + 1
+        
             self.completed.append(req)
-            
-            # Progress indicator (every 20 requests or key milestones)
+        
+        # ✅ KEEP: Progress logging
             if (idx + 1) % 20 == 0 or idx == 0 or idx == len(sorted_requests) - 1:
-                print(f"   [{idx+1:3d}/{len(sorted_requests)}] {req.college}: Assigned to {staff.staff_id} "
-                      f"(Queue: {queue_wait_hours:.1f}h, Process: {processing_days:.1f}d, Day: {assignment_day})")
-        
-        # STEP 5: Calculate final metrics and track absent staff
-        print(f"\n📊 Step 5: Calculating metrics...")
+                queue_wait = (assign_time - req.submission_time).total_seconds() / 3600
+                print(f"   [{idx+1:3d}/{len(sorted_requests)}] {req.college}: → {staff.staff_id} "
+                    f"(Queue: {queue_wait:.1f}h, Process: {proc_days:.2f}d)")
+    
+    # ✅ KEEP: Metrics & absent staff
+        print(f"\n📊 Step 4: Calculating metrics...")
         metrics = self._calculate_metrics()
-        
-        # Add absent staff info - compare current pool to full pool
+    
         full_staff = self._init_all_staff()
-        current_staff_ids = set(s.staff_id for s in self.staff_pool)
-        absent_staff_ids = [s.staff_id for s in full_staff if s.staff_id not in current_staff_ids]
-        
-        metrics['absent_staff'] = absent_staff_ids
+        current_ids = {s.staff_id for s in self.staff_pool}
+        metrics['absent_staff'] = [s.staff_id for s in full_staff if s.staff_id not in current_ids]
         metrics['waiting_queue'] = self.waiting_queue
-        
+    
         print(f"\n{'='*70}")
-        print(f"✅ SIMULATION COMPLETE - {len(self.completed)} PROCESSED, {len(self.waiting_queue)} WAITING")
-        if absent_staff_ids:
-            print(f"⚠️  ABSENT STAFF: {', '.join(absent_staff_ids)}")
+        print(f"✅ COMPLETE: {len(self.completed)} processed, {len(self.waiting_queue)} waiting")
+        if metrics['absent_staff']:
+            print(f"⚠️  Absent: {', '.join(metrics['absent_staff'])}")
         print(f"{'='*70}\n")
-        
+    
         return metrics
+    def _snap_to_work_hours(self, dt: datetime) -> datetime:
+        """Snap to 8 AM if before work, or next day 8 AM if after 5 PM"""
+        if dt.hour < 8:
+            return dt.replace(hour=8, minute=0, second=0, microsecond=0)
+        if dt.hour >= 17:
+            return (dt + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+        return dt
+
+    def _process_with_work_hours(self, start: datetime, duration_days: float) -> datetime:
+        """Add processing time respecting 8 AM - 5 PM work window"""
+        hours_left = duration_days
+        current = start
+        while hours_left > 0.01:
+            work_available = max(0, 17 - current.hour)
+            if work_available == 0:
+                current = current.replace(hour=8) + timedelta(days=1)
+                work_available = 9
+            work = min(work_available, hours_left)
+            current += timedelta(hours=work)
+            hours_left -= work
+        return current
     
     def _calculate_metrics(self) -> Dict:
         """
