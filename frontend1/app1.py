@@ -298,6 +298,7 @@ def playback_state(decisions: List[Dict], step: int) -> Dict:
                     "Request": item.get("request_id"),
                     "College": item.get("college"),
                     "Staff": item.get("staff_id"),
+                    "Priority Score": item.get("priority_score", 0.0),
                     "Queue Wait (h)": item.get("queue_wait_hours", "-"),
                     "Mode": item.get("details", ""),
                 }
@@ -310,6 +311,7 @@ def playback_state(decisions: List[Dict], step: int) -> Dict:
                     "Time": item.get("time"),
                     "Request": item.get("request_id"),
                     "College": item.get("college"),
+                    "Priority Score": item.get("priority_score", 0.0),
                     "Reason": item.get("details", ""),
                 }
             )
@@ -360,6 +362,7 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
                         "Request": "",
                         "College": "",
                         "Document": "",
+                        "Priority Score": "",
                         "Queue Wait (h)": "",
                         "Assigned At": "",
                     }
@@ -375,6 +378,7 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
                 "Request": row.get("Request", ""),
                 "College": row.get("College", ""),
                 "Document": row.get("Document", ""),
+                "Priority Score": row.get("Priority Score", ""),
                 "Queue Wait (h)": row.get("Queue Wait (h)", ""),
                 "Assigned At": row.get("Assigned At", ""),
             }
@@ -509,6 +513,7 @@ if not st.session_state.simulation_results or not st.session_state.simulation_en
 
 engine = st.session_state.simulation_engine
 results = st.session_state.simulation_results
+is_weighted_scheduler = results.get("scheduler_type") == "WEIGHTED"
 
 st.success("Simulation complete.")
 
@@ -593,6 +598,7 @@ else:
         staff_id = assignment.get("Staff") or "UNASSIGNED"
         request_id = assignment.get("Request")
         request_meta = request_lookup.get(request_id, {})
+        priority_score = request_meta.get("priority_score", assignment.get("Priority Score", 0.0))
 
         if staff_id not in staff_rows:
             staff_rows[staff_id] = []
@@ -603,6 +609,7 @@ else:
                 "Request": request_id,
                 "College": request_meta.get("college", assignment.get("College")),
                 "Document": request_meta.get("document_type", "-"),
+                "Priority Score": round(float(priority_score or 0.0), 4),
                 "Queue Wait (h)": assignment.get("Queue Wait (h)"),
                 "Assigned At": assignment.get("Time"),
             }
@@ -617,10 +624,19 @@ else:
                 "Request": request_id,
                 "College": request_meta.get("college", waiting_item.get("College")),
                 "Document": request_meta.get("document_type", "-"),
+                "Priority Score": round(float(request_meta.get("priority_score", waiting_item.get("Priority Score", 0.0)) or 0.0), 4),
                 "Submitted": request_meta.get("submission_time", "-"),
                 "Reason": waiting_item.get("Reason", ""),
                 "Event Time": waiting_item.get("Time"),
             }
+        )
+
+    if is_weighted_scheduler:
+        waiting_rows.sort(
+            key=lambda row: (
+                -float(row.get("Priority Score", 0.0)),
+                parse_event_time(str(row.get("Event Time", ""))),
+            )
         )
 
     if current_event:
@@ -646,15 +662,21 @@ else:
                         "Request": request_id,
                         "College": request_meta.get("college", "-"),
                         "Document": request_meta.get("document_type", "-"),
+                        "Priority Score": round(float(request_meta.get("priority_score", 0.0) or 0.0), 4),
                         "Submitted": submission_raw,
                         "Pending Wait (h)": round((current_time - submission_time).total_seconds() / 3600.0, 2),
-                        "_sort": submission_time,
+                        "_sort_submission": submission_time,
                     }
                 )
 
-        pending_queue_rows.sort(key=lambda row: row["_sort"])
+        if is_weighted_scheduler:
+            pending_queue_rows.sort(
+                key=lambda row: (-float(row.get("Priority Score", 0.0)), row["_sort_submission"])
+            )
+        else:
+            pending_queue_rows.sort(key=lambda row: row["_sort_submission"])
         for row in pending_queue_rows:
-            row.pop("_sort", None)
+            row.pop("_sort_submission", None)
 
         card1, card2, card3, card4, card5 = st.columns(5)
         card1.metric("Simulation Clock", current_time.strftime("%Y-%m-%d %H:%M"))
@@ -894,15 +916,20 @@ else:
     with f2:
         filter_doc = st.selectbox("Filter by Document", ["All"] + list(DOCUMENT_COMPLEXITY.keys()))
     with f3:
+        sort_options = [
+            "Assigned Day",
+            "Submission Time",
+            "Queue Wait Desc",
+            "Queue Wait Asc",
+            "Turnaround Desc",
+        ]
+        if is_weighted_scheduler:
+            sort_options = ["Priority Desc", "Priority Asc"] + sort_options
+
         sort_by = st.selectbox(
             "Sort by",
-            [
-                "Assigned Day",
-                "Submission Time",
-                "Queue Wait Desc",
-                "Queue Wait Asc",
-                "Turnaround Desc",
-            ],
+            sort_options,
+            index=0,
         )
 
     filtered = completed_requests
@@ -911,7 +938,17 @@ else:
     if filter_doc != "All":
         filtered = [req for req in filtered if req.document_type == filter_doc]
 
-    if sort_by == "Assigned Day":
+    if sort_by == "Priority Desc":
+        filtered = sorted(
+            filtered,
+            key=lambda req: (-float(getattr(req, "priority_score", 0.0)), req.submission_time),
+        )
+    elif sort_by == "Priority Asc":
+        filtered = sorted(
+            filtered,
+            key=lambda req: (float(getattr(req, "priority_score", 0.0)), req.submission_time),
+        )
+    elif sort_by == "Assigned Day":
         filtered = sorted(filtered, key=lambda req: (req.assignment_time.date(), req.submission_time))
     elif sort_by == "Submission Time":
         filtered = sorted(filtered, key=lambda req: req.submission_time)
@@ -933,6 +970,7 @@ else:
                 "Document": req.document_type,
                 "Urgency": req.urgency,
                 "Requester": req.requester_type,
+                "Priority Score": round(float(getattr(req, "priority_score", 0.0)), 4),
                 "Queue Wait (h)": round(req.get_waiting_time_minutes() / 60.0, 2),
                 "Turnaround (d)": round(req.get_turnaround_time_minutes() / 1440.0, 2),
                 "Assigned Day": assigned_day,
@@ -961,6 +999,7 @@ else:
         st.write(f"**Document Type:** {selected_req.document_type}")
         st.write(f"**Urgency:** {selected_req.urgency}/10")
         st.write(f"**Requester Type:** {selected_req.requester_type}")
+        st.write(f"**Priority Score:** {float(getattr(selected_req, 'priority_score', 0.0)):.4f}")
         st.write(f"**Assigned Staff:** {selected_req.assigned_staff}")
 
     with d2:
