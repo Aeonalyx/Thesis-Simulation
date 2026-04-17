@@ -438,6 +438,15 @@ class SimulationEngine:
         afternoon_count = int(total_requests * 0.20)
         evening_count = total_requests - morning_count - afternoon_count
 
+        # Generate submissions strictly inside configured working hours.
+        start_hour = self.work_start_minutes / 60.0
+        end_hour = self.work_end_minutes / 60.0
+        effective_end_hour = max(start_hour + (1.0 / 60.0), end_hour - (1.0 / 60.0))
+        span = max(effective_end_hour - start_hour, 0.1)
+
+        bucket_1_end = start_hour + (span * 0.40)
+        bucket_2_end = start_hour + (span * 0.75)
+
         def _next_urgency() -> int:
             low = max(1, urgency_base - 2)
             high = min(10, urgency_base + 2)
@@ -468,9 +477,9 @@ class SimulationEngine:
                 )
                 request_counter += 1
 
-        _add_batch(morning_count, 8, 10)
-        _add_batch(afternoon_count, 14, 16)
-        _add_batch(evening_count, 16, 24)
+        _add_batch(morning_count, start_hour, bucket_1_end)
+        _add_batch(afternoon_count, bucket_1_end, bucket_2_end)
+        _add_batch(evening_count, bucket_2_end, effective_end_hour)
 
         return requests
 
@@ -493,13 +502,14 @@ class SimulationEngine:
         staff: StaffMember,
         earliest_time: datetime,
         enforce_quota: bool,
+        ignore_staff_availability: bool = False,
     ) -> Optional[datetime]:
         if not staff.is_available:
             return None
 
         # Quota-based variants model assignment as a daily intake process.
         # They should not be blocked by completion_time of previously assigned requests.
-        if enforce_quota:
+        if enforce_quota or ignore_staff_availability:
             candidate = self._next_working_start(earliest_time)
         else:
             # Quota-free keeps strict per-staff availability sequencing.
@@ -528,10 +538,16 @@ class SimulationEngine:
         earliest_time: datetime,
         enforce_quota: bool,
         exact_time: Optional[datetime] = None,
+        ignore_staff_availability: bool = False,
     ) -> List[Tuple[datetime, StaffMember]]:
         options: List[Tuple[datetime, StaffMember]] = []
         for staff in staff_group:
-            slot = self._first_slot_for_staff(staff, earliest_time, enforce_quota)
+            slot = self._first_slot_for_staff(
+                staff,
+                earliest_time,
+                enforce_quota,
+                ignore_staff_availability=ignore_staff_availability,
+            )
             if slot is None:
                 continue
             if exact_time is not None and slot != exact_time:
@@ -594,6 +610,7 @@ class SimulationEngine:
                 earliest,
                 enforce_quota=False,
                 exact_time=exact_time,
+                ignore_staff_availability=True,
             )
             chosen = self._select_from_options(options, mode="earliest")
             if not chosen:
@@ -731,11 +748,8 @@ class SimulationEngine:
         staff.total_assigned += 1
         staff.increment_day_quota(assignment_time.date())
 
-        # Keep strict sequencing only for quota-free mode.
-        if self.allocator_type == "quota_free":
-            staff.next_available_time = completion_time
-        else:
-            staff.next_available_time = assignment_time
+        # Assignment availability is not completion-blocked in current intake model.
+        staff.next_available_time = assignment_time
 
         self.completed.append(request)
 
