@@ -43,7 +43,212 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+
+def apply_dashboard_theme():
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Space+Grotesk:wght@500;700&display=swap');
+
+        :root {
+            --bg-soft: #0f0d1b;
+            --panel: #161626;
+            --panel-2: #1d1b31;
+            --ink: #f5f3ff;
+            --ink-soft: #b6b0d4;
+            --line: #2f2a47;
+            --accent-a: #a855f7;
+            --accent-b: #7c3aed;
+            --accent-c: #22d3ee;
+            --ok: #10b981;
+        }
+
+        [data-testid="stAppViewContainer"] {
+            background:
+                radial-gradient(980px 420px at 96% 0%, rgba(168, 85, 247, 0.20), transparent 60%),
+                radial-gradient(860px 360px at 0% 18%, rgba(34, 211, 238, 0.13), transparent 60%),
+                linear-gradient(150deg, #0b0b12 0%, #161127 45%, #22163d 100%);
+        }
+
+        .stApp, [data-testid="stSidebar"] {
+            font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+            color: var(--ink);
+        }
+
+        [data-testid="stAppViewContainer"] .main,
+        [data-testid="stAppViewContainer"] .main * {
+            color: var(--ink);
+        }
+
+        [data-testid="stHeader"] {
+            background: rgba(0, 0, 0, 0);
+        }
+
+        .main .block-container {
+            padding-top: 1.2rem;
+            padding-bottom: 2.2rem;
+        }
+
+        h1, h2, h3 {
+            font-family: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
+            letter-spacing: 0.2px;
+        }
+
+        [data-testid="stCaptionContainer"], .stCaption {
+            color: var(--ink-soft) !important;
+        }
+
+        [data-testid="stAlert"] {
+            background: rgba(29, 27, 49, 0.82);
+            border: 1px solid var(--line);
+            color: var(--ink);
+        }
+
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #121023 0%, #191630 100%);
+            border-right: 1px solid var(--line);
+        }
+
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] span,
+        [data-testid="stSidebar"] .stMarkdown {
+            color: var(--ink) !important;
+        }
+
+        [data-testid="stSidebar"] .stSlider,
+        [data-testid="stSidebar"] .stNumberInput,
+        [data-testid="stSidebar"] .stSelectbox,
+        [data-testid="stSidebar"] .stTextInput,
+        [data-testid="stSidebar"] .stTimeInput {
+            background: transparent;
+        }
+
+        [data-testid="stMetric"] {
+            background: linear-gradient(160deg, #1a1730 0%, #141326 100%);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 0.55rem 0.8rem;
+            box-shadow: 0 10px 26px rgba(7, 6, 13, 0.45);
+        }
+
+        [data-testid="stMetricLabel"] {
+            color: var(--ink-soft);
+            font-weight: 600;
+        }
+
+        [data-testid="stMetricValue"] {
+            color: var(--ink);
+            font-weight: 800;
+        }
+
+        .stButton > button {
+            border-radius: 10px;
+            border: 1px solid #3c325e;
+            background: linear-gradient(140deg, #1f1b33 0%, #151226 100%);
+            color: #f8f7ff;
+            font-weight: 700;
+            box-shadow: 0 8px 18px rgba(6, 4, 12, 0.38);
+        }
+
+        .stButton > button:hover {
+            border-color: #8b5cf6;
+            background: linear-gradient(120deg, #6d28d9 0%, #a855f7 62%, #22d3ee 100%);
+            color: #ffffff;
+        }
+
+        div[data-testid="stDataFrame"] {
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            overflow: hidden;
+            background: linear-gradient(180deg, #161626 0%, #1b1a2d 100%);
+            box-shadow: 0 12px 28px rgba(5, 3, 10, 0.45);
+        }
+
+        div[data-testid="stDataFrame"] [role="grid"],
+        div[data-testid="stDataFrame"] table {
+            background: #161626 !important;
+            color: #d6d1ee !important;
+        }
+
+        div[data-testid="stDataFrame"] th {
+            background: #241b3d !important;
+            color: #efe9ff !important;
+            border-bottom: 1px solid #3b2f58 !important;
+        }
+
+        div[data-testid="stDataFrame"] td {
+            border-bottom: 1px solid #2a2441 !important;
+            color: #d6d1ee !important;
+        }
+
+        .stPlotlyChart {
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 0.35rem;
+            background: linear-gradient(180deg, rgba(29, 27, 49, 0.88) 0%, rgba(22, 22, 38, 0.88) 100%);
+            box-shadow: 0 14px 30px rgba(6, 4, 12, 0.45);
+        }
+
+        .hero-band {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            margin: 0.1rem 0 1rem;
+            padding: 0.9rem 1rem;
+            border-radius: 14px;
+            border: 1px solid rgba(168, 85, 247, 0.5);
+            background: linear-gradient(105deg, #21143a 0%, #3f1b78 48%, #5c2a9d 78%, #2a8eb3 100%);
+            color: #f8fafc;
+            box-shadow: 0 18px 34px rgba(14, 9, 24, 0.52);
+        }
+
+        .hero-band p {
+            margin: 0;
+            line-height: 1.3;
+        }
+
+        .hero-kicker {
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            opacity: 0.9;
+            font-weight: 700;
+        }
+
+        .hero-title {
+            font-size: 1.08rem;
+            font-weight: 800;
+            margin-top: 0.18rem;
+        }
+
+        .hero-sub {
+            font-size: 0.82rem;
+            opacity: 0.92;
+            margin-top: 0.24rem;
+        }
+
+        .hero-pill {
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 999px;
+            padding: 0.28rem 0.7rem;
+            font-weight: 700;
+            font-size: 0.8rem;
+            background: rgba(255, 255, 255, 0.14);
+            white-space: nowrap;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 st.title("📊 Registrar Queue Simulation Dashboard")
+st.caption("Real-time simulation and analysis with playback, staffing, and weighted routing insights.")
+apply_dashboard_theme()
 
 
 # ============================================================================
@@ -264,6 +469,28 @@ def parse_event_time(value: str) -> datetime:
         return datetime.now()
 
 
+def format_compact_datetime(value) -> str:
+    if value in (None, "", "-"):
+        return "-"
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            dt = datetime.fromisoformat(str(value))
+        except Exception:
+            return str(value)
+    return dt.strftime("%b %d %H:%M")
+
+
+def format_compact_day(day_value) -> str:
+    if day_value is None:
+        return "-"
+    try:
+        return day_value.strftime("%b %d, %Y")
+    except Exception:
+        return str(day_value)
+
+
 def routing_events(event_log: List[Dict]) -> List[Dict]:
     """Keep only request-routing decisions for request-by-request playback."""
     decision_types = {"ASSIGN", "WAITING"}
@@ -355,7 +582,7 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
         if assigned_day != last_day:
             if last_day is not None:
                 # Insert a visible day divider row between day blocks.
-                divider_text = f"--- Day {day_block + 1} Start ({assigned_day.isoformat() if assigned_day else '-'}) ---"
+                divider_text = f"--- Day {day_block + 1} Start ({format_compact_day(assigned_day)}) ---"
                 display_rows.append(
                     {
                         "Day Block": divider_text,
@@ -368,7 +595,7 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
                     }
                 )
             day_block += 1
-            day_label = f"Day {day_block} ({assigned_day.isoformat() if assigned_day else '-'})"
+            day_label = f"Day {day_block} ({format_compact_day(assigned_day)})"
         else:
             day_label = ""
 
@@ -380,7 +607,7 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
                 "Document": row.get("Document", ""),
                 "Priority Score": row.get("Priority Score", ""),
                 "Queue Wait (h)": row.get("Queue Wait (h)", ""),
-                "Assigned At": row.get("Assigned At", ""),
+                "Assigned At": format_compact_datetime(row.get("Assigned At", "")),
             }
         )
         last_day = assigned_day
@@ -518,9 +745,18 @@ is_weighted_scheduler = results.get("scheduler_type") == "WEIGHTED"
 st.success("Simulation complete.")
 
 seed_used = results.get("seed_used")
-st.caption(
-    f"Seed used: {seed_used} | Scheduler: {results.get('scheduler_type')} | "
-    f"Allocator: {results.get('allocator_type')} | Mode: custom sliders"
+st.markdown(
+    f"""
+    <div class="hero-band">
+        <div>
+            <p class="hero-kicker">Simulation Snapshot</p>
+            <p class="hero-title">Scheduler: {results.get('scheduler_type')} | Allocator: {results.get('allocator_type')}</p>
+            <p class="hero-sub">Seed: {seed_used} | Mode: Custom sliders</p>
+        </div>
+        <div class="hero-pill">Ready for playback</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 
@@ -619,15 +855,17 @@ else:
     for waiting_item in frame_data["waiting"]:
         request_id = waiting_item.get("Request")
         request_meta = request_lookup.get(request_id, {})
+        event_time_raw = waiting_item.get("Time")
         waiting_rows.append(
             {
                 "Request": request_id,
                 "College": request_meta.get("college", waiting_item.get("College")),
                 "Document": request_meta.get("document_type", "-"),
                 "Priority Score": round(float(request_meta.get("priority_score", waiting_item.get("Priority Score", 0.0)) or 0.0), 4),
-                "Submitted": request_meta.get("submission_time", "-"),
+                "Submitted": format_compact_datetime(request_meta.get("submission_time", "-")),
                 "Reason": waiting_item.get("Reason", ""),
-                "Event Time": waiting_item.get("Time"),
+                "Event Time": format_compact_datetime(event_time_raw),
+                "_event_time": parse_event_time(str(event_time_raw)) if event_time_raw else datetime.min,
             }
         )
 
@@ -635,7 +873,7 @@ else:
         waiting_rows.sort(
             key=lambda row: (
                 -float(row.get("Priority Score", 0.0)),
-                parse_event_time(str(row.get("Event Time", ""))),
+                row.get("_event_time", datetime.min),
             )
         )
 
@@ -663,7 +901,7 @@ else:
                         "College": request_meta.get("college", "-"),
                         "Document": request_meta.get("document_type", "-"),
                         "Priority Score": round(float(request_meta.get("priority_score", 0.0) or 0.0), 4),
-                        "Submitted": submission_raw,
+                        "Submitted": format_compact_datetime(submission_raw),
                         "Pending Wait (h)": round((current_time - submission_time).total_seconds() / 3600.0, 2),
                         "_sort_submission": submission_time,
                     }
@@ -805,7 +1043,11 @@ else:
         with wait_col2:
             st.caption("Unassignable Waiting List: requests that cannot be routed to any staff.")
             if waiting_rows:
-                st.dataframe(pd.DataFrame(waiting_rows), use_container_width=True, hide_index=True)
+                waiting_display_rows = [
+                    {k: v for k, v in row.items() if not str(k).startswith("_")}
+                    for row in waiting_rows
+                ]
+                st.dataframe(pd.DataFrame(waiting_display_rows), use_container_width=True, hide_index=True)
             else:
                 st.caption("No unassignable waiting requests at this step.")
 
@@ -1003,9 +1245,9 @@ else:
         st.write(f"**Assigned Staff:** {selected_req.assigned_staff}")
 
     with d2:
-        st.write(f"**Submission:** {selected_req.submission_time}")
-        st.write(f"**Assignment:** {selected_req.assignment_time}")
-        st.write(f"**Completion:** {selected_req.completion_time}")
+        st.write(f"**Submission:** {format_compact_datetime(selected_req.submission_time)}")
+        st.write(f"**Assignment:** {format_compact_datetime(selected_req.assignment_time)}")
+        st.write(f"**Completion:** {format_compact_datetime(selected_req.completion_time)}")
         st.write(f"**Queue Wait:** {selected_req.get_waiting_time_minutes() / 60.0:.2f} h")
         st.write(f"**Turnaround:** {selected_req.get_turnaround_time_minutes() / 1440.0:.2f} d")
 
