@@ -13,7 +13,7 @@ import os
 import sys
 import time as tm
 from datetime import datetime, time
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pandas as pd
 import plotly.express as px
@@ -161,33 +161,96 @@ def apply_dashboard_theme():
             border: 1px solid var(--line);
             border-radius: 12px;
             overflow: hidden;
-            background: linear-gradient(180deg, #161626 0%, #1b1a2d 100%);
+            background: linear-gradient(180deg, #221a39 0%, #1c1731 100%);
             box-shadow: 0 12px 28px rgba(5, 3, 10, 0.45);
         }
 
         div[data-testid="stDataFrame"] [role="grid"],
+        div[data-testid="stDataFrame"] [data-testid="stDataFrameResizable"],
         div[data-testid="stDataFrame"] table {
-            background: #161626 !important;
-            color: #d6d1ee !important;
+            background: #241c3d !important;
+            color: #e4def8 !important;
         }
 
+        div[data-testid="stDataFrame"] [role="columnheader"],
         div[data-testid="stDataFrame"] th {
-            background: #241b3d !important;
-            color: #efe9ff !important;
-            border-bottom: 1px solid #3b2f58 !important;
+            background: #35245a !important;
+            color: #f2ebff !important;
+            border-bottom: 1px solid #513a7a !important;
         }
 
+        div[data-testid="stDataFrame"] [role="gridcell"],
         div[data-testid="stDataFrame"] td {
-            border-bottom: 1px solid #2a2441 !important;
-            color: #d6d1ee !important;
+            background: rgba(44, 34, 69, 0.55) !important;
+            border-bottom: 1px solid #30254a !important;
+            color: #e4def8 !important;
+        }
+
+        div[data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"],
+        div[data-testid="stDataFrame"] tr:hover td {
+            background: rgba(88, 62, 129, 0.50) !important;
         }
 
         .stPlotlyChart {
             border: 1px solid var(--line);
             border-radius: 14px;
             padding: 0.35rem;
-            background: linear-gradient(180deg, rgba(29, 27, 49, 0.88) 0%, rgba(22, 22, 38, 0.88) 100%);
+            background: linear-gradient(180deg, rgba(42, 30, 67, 0.82) 0%, rgba(27, 22, 46, 0.86) 100%);
             box-shadow: 0 14px 30px rgba(6, 4, 12, 0.45);
+        }
+
+        .theme-table-wrap {
+            border: 1px solid #4a3470;
+            border-radius: 12px;
+            overflow: auto;
+            background: linear-gradient(180deg, #1f1735 0%, #171227 100%);
+            box-shadow: inset 0 0 0 1px rgba(137, 93, 205, 0.10);
+        }
+
+        .theme-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.86rem;
+            color: #e7e1fa;
+            min-width: 760px;
+        }
+
+        .theme-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: linear-gradient(180deg, #3c2a62 0%, #2e214c 100%);
+            color: #f3edff;
+            font-weight: 700;
+            text-align: left;
+            padding: 0.52rem 0.56rem;
+            border-bottom: 1px solid #5b4487;
+            white-space: nowrap;
+        }
+
+        .theme-table tbody td {
+            padding: 0.44rem 0.56rem;
+            border-bottom: 1px solid #30264b;
+            color: #ddd4f5;
+            white-space: nowrap;
+        }
+
+        .theme-table tbody tr:nth-child(odd) td {
+            background: rgba(36, 27, 57, 0.72);
+        }
+
+        .theme-table tbody tr:nth-child(even) td {
+            background: rgba(30, 23, 48, 0.72);
+        }
+
+        .theme-table tbody tr:hover td {
+            background: rgba(110, 78, 164, 0.36);
+            color: #f3edff;
+        }
+
+        .theme-table tbody td:last-child,
+        .theme-table thead th:last-child {
+            text-align: right;
         }
 
         .hero-band {
@@ -491,6 +554,62 @@ def format_compact_day(day_value) -> str:
         return str(day_value)
 
 
+def build_staff_college_map(staff_pool) -> Dict[str, str]:
+    mapping: Dict[str, str] = {}
+    for staff in staff_pool:
+        mapping[str(staff.staff_id)] = str(staff.college_affiliation)
+    return mapping
+
+
+def format_staff_label(staff_id: Optional[str], staff_map: Dict[str, str]) -> str:
+    if not staff_id:
+        return "UNASSIGNED"
+    staff_text = str(staff_id)
+    if staff_text.upper() == "UNASSIGNED":
+        return "UNASSIGNED"
+    college = staff_map.get(staff_text)
+    if college and college != "-":
+        return f"{staff_text} ({college})"
+    return staff_text
+
+
+CHART_COLORWAY = ["#a855f7", "#7c3aed", "#22d3ee", "#c084fc", "#38bdf8", "#f472b6"]
+
+
+def apply_plot_theme(fig: go.Figure):
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(28,22,46,0.92)",
+        colorway=CHART_COLORWAY,
+        font=dict(color="#ebe5ff", family="Plus Jakarta Sans, Segoe UI, sans-serif"),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#d9d2f0")),
+    )
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor="rgba(111,87,164,0.28)",
+        zeroline=False,
+        linecolor="rgba(130,105,190,0.45)",
+    )
+    fig.update_yaxes(
+        showgrid=True,
+        gridcolor="rgba(111,87,164,0.28)",
+        zeroline=False,
+        linecolor="rgba(130,105,190,0.45)",
+    )
+
+
+def render_theme_table(df: pd.DataFrame, height_px: int = 320):
+    if df is None or df.empty:
+        return
+    safe_df = df.fillna("")
+    table_html = safe_df.to_html(index=False, classes="theme-table", border=0)
+    st.markdown(
+        f'<div class="theme-table-wrap" style="max-height:{int(height_px)}px;">{table_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def routing_events(event_log: List[Dict]) -> List[Dict]:
     """Keep only request-routing decisions for request-by-request playback."""
     decision_types = {"ASSIGN", "WAITING"}
@@ -741,6 +860,7 @@ if not st.session_state.simulation_results or not st.session_state.simulation_en
 engine = st.session_state.simulation_engine
 results = st.session_state.simulation_results
 is_weighted_scheduler = results.get("scheduler_type") == "WEIGHTED"
+staff_college_map = build_staff_college_map(engine.staff_pool)
 
 st.success("Simulation complete.")
 
@@ -927,7 +1047,7 @@ else:
             "**Current Routing Decision:** "
             f"{current_event.get('event_type')} | "
             f"Request={current_event.get('request_id')} | "
-            f"Staff={current_event.get('staff_id')} | "
+            f"Staff={format_staff_label(current_event.get('staff_id'), staff_college_map)} | "
             f"Details={current_event.get('details')}"
         )
 
@@ -946,7 +1066,8 @@ else:
 
             quota_value = staff.quota_limit if quota_enforced else None
             row = {
-                "Staff": staff.staff_id,
+                "Staff ID": staff.staff_id,
+                "Staff": format_staff_label(staff.staff_id, staff_college_map),
                 "College": staff.college_affiliation,
                 "Assigned Today": assigned_today,
                 "Total Assigned": total_assigned,
@@ -958,10 +1079,10 @@ else:
 
         capacity_df = pd.DataFrame(capacity_rows)
         assigned_today_map = {
-            row["Staff"]: row["Assigned Today"] for row in capacity_rows
+            row["Staff ID"]: row["Assigned Today"] for row in capacity_rows
         }
         total_assigned_map = {
-            row["Staff"]: row["Total Assigned"] for row in capacity_rows
+            row["Staff ID"]: row["Total Assigned"] for row in capacity_rows
         }
 
         fig_capacity = go.Figure()
@@ -970,7 +1091,7 @@ else:
                 name="Assigned Today",
                 x=capacity_df["Staff"],
                 y=capacity_df["Assigned Today"],
-                marker_color="#2a9d8f",
+                marker_color="#a855f7",
             )
         )
         if quota_enforced:
@@ -979,8 +1100,8 @@ else:
                     name="Quota per Day",
                     x=capacity_df["Staff"],
                     y=capacity_df["Quota/Day"],
-                    marker_color="#e9c46a",
-                    opacity=0.6,
+                    marker_color="#22d3ee",
+                    opacity=0.55,
                 )
             )
 
@@ -991,6 +1112,7 @@ else:
             barmode="group",
             height=360,
         )
+        apply_plot_theme(fig_capacity)
         st.plotly_chart(fig_capacity, use_container_width=True)
 
         st.subheader("Live Staff Request Lists")
@@ -1021,12 +1143,7 @@ else:
                     rows = staff_rows.get(staff_id, [])
                     if rows:
                         display_rows = staff_rows_with_day_separators(rows)
-                        st.dataframe(
-                            pd.DataFrame(display_rows),
-                            use_container_width=True,
-                            hide_index=True,
-                            height=340,
-                        )
+                        render_theme_table(pd.DataFrame(display_rows), height_px=340)
                     else:
                         st.caption("No requests routed here yet.")
 
@@ -1036,7 +1153,7 @@ else:
         with wait_col1:
             st.caption("Pending Queue: requests already arrived but still waiting for a slot.")
             if pending_queue_rows:
-                st.dataframe(pd.DataFrame(pending_queue_rows), use_container_width=True, hide_index=True)
+                render_theme_table(pd.DataFrame(pending_queue_rows), height_px=320)
             else:
                 st.caption("No pending queue at this step.")
 
@@ -1047,7 +1164,7 @@ else:
                     {k: v for k, v in row.items() if not str(k).startswith("_")}
                     for row in waiting_rows
                 ]
-                st.dataframe(pd.DataFrame(waiting_display_rows), use_container_width=True, hide_index=True)
+                render_theme_table(pd.DataFrame(waiting_display_rows), height_px=320)
             else:
                 st.caption("No unassignable waiting requests at this step.")
 
@@ -1073,11 +1190,26 @@ with k1:
     pct = (processed / expected * 100.0) if expected > 0 else 0.0
     st.metric("Total Processed", f"{processed}/{expected}", f"{pct:.0f}%")
 with k2:
-    st.metric("Avg Queue Wait", f"{results.get('avg_waiting_time_hours', 0):.2f} h")
+    avg_wait_hours = float(results.get("avg_waiting_time_hours", 0.0))
+    st.metric(
+        "Avg Queue Wait",
+        f"{avg_wait_hours:.2f} h",
+        f"{(avg_wait_hours / 24.0):.2f} d equiv",
+    )
 with k3:
-    st.metric("Avg Turnaround", f"{results.get('avg_turnaround_days', 0):.2f} d")
+    avg_turn_days = float(results.get("avg_turnaround_days", 0.0))
+    st.metric(
+        "Avg Turnaround",
+        f"{avg_turn_days:.2f} d",
+        f"{(avg_turn_days * 24.0):.2f} h equiv",
+    )
 with k4:
-    st.metric("Days Elapsed", f"{results.get('total_days_elapsed', 0):.2f} d")
+    elapsed_days = float(results.get("total_days_elapsed", 0.0))
+    st.metric(
+        "Days Elapsed",
+        f"{elapsed_days:.2f} d",
+        f"{(elapsed_days * 24.0):.2f} h equiv",
+    )
 with k5:
     st.metric("Throughput", f"{results.get('throughput_req_per_day', 0):.2f} req/day")
 
@@ -1096,13 +1228,23 @@ chart_col1, chart_col2 = st.columns(2)
 with chart_col1:
     staff_load = results.get("staff_load", {})
     if staff_load:
+        staff_ids = list(staff_load.keys())
+        staff_labels = [format_staff_label(staff_id, staff_college_map) for staff_id in staff_ids]
+        staff_values = [staff_load[staff_id] for staff_id in staff_ids]
         fig_staff = go.Figure(
             data=[
                 go.Bar(
-                    x=list(staff_load.keys()),
-                    y=list(staff_load.values()),
-                    marker=dict(color=list(staff_load.values()), colorscale="Blues"),
-                    text=list(staff_load.values()),
+                    x=staff_labels,
+                    y=staff_values,
+                    marker=dict(
+                        color=staff_values,
+                        colorscale=[
+                            [0.0, "#5b21b6"],
+                            [0.55, "#9333ea"],
+                            [1.0, "#22d3ee"],
+                        ],
+                    ),
+                    text=staff_values,
                     textposition="outside",
                 )
             ]
@@ -1113,6 +1255,7 @@ with chart_col1:
             yaxis_title="Processed Requests",
             height=400,
         )
+        apply_plot_theme(fig_staff)
         st.plotly_chart(fig_staff, use_container_width=True)
 
 with chart_col2:
@@ -1134,9 +1277,11 @@ with chart_col2:
             x="Assigned Day",
             y="Count",
             color="College",
+            color_discrete_sequence=CHART_COLORWAY,
             title="Assignments per Day by College",
             height=400,
         )
+        apply_plot_theme(fig_timeline)
         st.plotly_chart(fig_timeline, use_container_width=True)
 
 
@@ -1216,12 +1361,12 @@ else:
                 "Queue Wait (h)": round(req.get_waiting_time_minutes() / 60.0, 2),
                 "Turnaround (d)": round(req.get_turnaround_time_minutes() / 1440.0, 2),
                 "Assigned Day": assigned_day,
-                "Staff": req.assigned_staff,
+                "Staff": format_staff_label(req.assigned_staff, staff_college_map),
             }
         )
 
     table_df = pd.DataFrame(table_rows)
-    st.dataframe(table_df, use_container_width=True, hide_index=True)
+    render_theme_table(table_df, height_px=430)
 
     st.subheader("Detailed Request Panel")
     pick_index = st.number_input(
@@ -1242,7 +1387,7 @@ else:
         st.write(f"**Urgency:** {selected_req.urgency}/10")
         st.write(f"**Requester Type:** {selected_req.requester_type}")
         st.write(f"**Priority Score:** {float(getattr(selected_req, 'priority_score', 0.0)):.4f}")
-        st.write(f"**Assigned Staff:** {selected_req.assigned_staff}")
+        st.write(f"**Assigned Staff:** {format_staff_label(selected_req.assigned_staff, staff_college_map)}")
 
     with d2:
         st.write(f"**Submission:** {format_compact_datetime(selected_req.submission_time)}")
@@ -1260,10 +1405,10 @@ else:
     ]
     lifecycle_labels = [
         "Submitted",
-        f"Assigned ({selected_req.assigned_staff})",
+        f"Assigned ({format_staff_label(selected_req.assigned_staff, staff_college_map)})",
         "Completed",
     ]
-    lifecycle_colors = ["#f4a261", "#2a9d8f", "#264653"]
+    lifecycle_colors = ["#22d3ee", "#a855f7", "#f472b6"]
     lifecycle_y = [2.0, 1.0, 0.0]
 
     # Stair path so labels do not get mushed in a single horizontal line.
@@ -1288,7 +1433,7 @@ else:
             x=step_x,
             y=step_y,
             mode="lines",
-            line=dict(color="#8d99ae", width=3),
+            line=dict(color="#8b79bb", width=3),
             hoverinfo="skip",
             showlegend=False,
         )
@@ -1317,6 +1462,8 @@ else:
         ),
         margin=dict(l=20, r=20, t=20, b=20),
     )
+    apply_plot_theme(fig_request_timeline)
+    fig_request_timeline.update_yaxes(showgrid=False)
     st.plotly_chart(fig_request_timeline, use_container_width=True)
 
 
