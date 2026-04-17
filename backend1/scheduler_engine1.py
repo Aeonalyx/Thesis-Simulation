@@ -588,8 +588,6 @@ class WorkloadBasedAllocator(BaseAllocator):
             )  # NEW: Check quota
         ]
         
-        
-        
         # TIER 3: Nobody available and under quota
         if available:
             return min(available, key=lambda s: s.total_assigned)
@@ -599,7 +597,7 @@ class WorkloadBasedAllocator(BaseAllocator):
             candidates = [
                 s for s in self.staff_pool 
                 if s.is_available
-                and (quota_tracker is None or quota_tracker.get(s.staff_id, {}).get(req_day, 0) < s.quota_limit)
+                and (quota_tracker is None or quota_tracker.get(s.staff_id, {}).get(day, 0) < s.quota_limit)
             ]
             if candidates:
                 return min(candidates, key=lambda s: s.total_assigned)
@@ -682,6 +680,7 @@ class PooledAllocator(BaseAllocator):
             candidates = [
                 s for s in self.staff_pool 
                 if s.is_available
+                and quota_tracker.get(s.staff_id, {}).get(day, 0) < s.quota_limit
             ]
             if candidates:
                 return min(candidates, key=lambda s: s.next_available_time)
@@ -737,9 +736,6 @@ class QuotaFreeAllocator(BaseAllocator):
         
         if candidates:
             # Pick least busy (whoever has earliest next_available_time)
-            return min(candidates, key=lambda s: s.next_available_time)
-        
-        if candidates:
             return min(candidates, key=lambda s: s.next_available_time)
         
         for day in range(req_day + 1, req_day + 30):
@@ -1000,6 +996,9 @@ class SimulationEngine:
         self.completed = []
         self.waiting_queue = []
         self.start_time = self.start_time.replace(hour=8, minute=0, second=0, microsecond=0)
+
+        for staff in self.staff_pool:
+            staff.next_available_time = self.start_time
     
     # ✅ KEEP: Generate & sort requests
         print(f"\n📋 Step 1: Generating requests...")
@@ -1041,8 +1040,10 @@ class SimulationEngine:
             staff.total_assigned += 1  # For "least loaded" selection in allocators
         
         # 🔑 UPDATE DAILY QUOTA TRACKER (per staff, per day)
-            quota_tracker.setdefault(staff.staff_id, {})[req_day] = \
-                quota_tracker.get(staff.staff_id, {}).get(req_day, 0) + 1
+            # 🔑 UPDATE DAILY QUOTA TRACKER for ASSIGNMENT DAY (not submission day)
+            assign_day = int((assign_time - self.start_time).total_seconds() // 86400)
+            quota_tracker.setdefault(staff.staff_id, {})[assign_day] = \
+                quota_tracker.get(staff.staff_id, {}).get(assign_day, 0) + 1
         
             self.completed.append(req)
         
