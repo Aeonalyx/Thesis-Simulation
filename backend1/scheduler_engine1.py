@@ -776,7 +776,8 @@ class SimulationEngine:
         self, 
         scheduler_type: str, 
         allocator_type: str, 
-        staff_config: Optional[Dict] = None
+        staff_config: Optional[Dict] = None,
+        random_seed: Optional[int] = None
     ):
         """
         Initialize the simulation engine.
@@ -810,6 +811,11 @@ class SimulationEngine:
                 num_staff = staff_config.get('num_staff', 6)
             if 'quota_limit' in staff_config:
                 quota_limit = staff_config.get('quota_limit', 20)
+
+        if random_seed is None:
+            random_seed = random.randint(1, 2_147_483_647)  # Generate if not provided
+        self.random_seed = int(random_seed)
+        self.rng = random.Random(self.random_seed)  # Create seeded RNG
         
         # STEP 2: Create staff pool with configured quota
         self.staff_pool = self._generate_staff_pool(num_staff, quota_limit)
@@ -946,15 +952,15 @@ class SimulationEngine:
         def _add_requests(count: int, start_hour: float, end_hour: float):
             nonlocal current_request_id
             for _ in range(count):
-                hours_in_day = random.uniform(start_hour, end_hour)
+                hours_in_day = self.rng.uniform(start_hour, end_hour)
                 submission_time = self.start_time + timedelta(hours=hours_in_day)
-                college = random.choices(college_list, weights=college_weights, k=1)[0]
+                college = self.rng.choices(college_list, weights=college_weights, k=1)[0]
                 requests.append(DocumentRequest(
                     request_id=f"REQ{current_request_id:04d}",
                     college=college,
-                    document_type=random.choice(doc_types),
-                    urgency=random.choice(urgency_range),
-                    requester_type=random.choice(requester_types),
+                    document_type=self.rng.choice(doc_types),
+                    urgency=self.rng.choice(urgency_range),
+                    requester_type=self.rng.choice(requester_types),
                     submission_time=submission_time
                 ))
                 current_request_id += 1
@@ -1027,7 +1033,7 @@ class SimulationEngine:
         
         # Processing time with variation
             base_days = DOCUMENT_COMPLEXITY.get(req.document_type, 1.0)
-            proc_days = random.uniform(base_days * 0.8, base_days * 1.2)
+            proc_days = self.rng.uniform(base_days * 0.8, base_days * 1.2)
         
         # ✅ USE WORKING HOURS HELPER (8 AM - 5 PM)
             comp_time = self._process_with_work_hours(assign_time, proc_days)
@@ -1158,6 +1164,10 @@ class SimulationEngine:
             "staff_load": staff_load,
             "scenario": self.scenario
         }
+        
+        metrics.update({
+            "seed_used": self.random_seed,  
+                    })
         
         return metrics
 

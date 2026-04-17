@@ -91,6 +91,18 @@ quota_limit = st.sidebar.slider(
     help="Max requests per staff per day"
 )
 
+st.sidebar.subheader("Reproducibility")
+seed_mode = st.sidebar.radio("Seed Mode", ["Auto", "Manual"], index=0)
+if seed_mode == "Manual":
+    manual_seed = st.sidebar.number_input(
+        "Random Seed", 
+        min_value=1, 
+        max_value=2_147_483_647, 
+        value=12345
+    )
+else:
+    manual_seed = None
+
 # ============================================================================
 # RUN SIMULATION
 # ============================================================================
@@ -122,13 +134,17 @@ if st.sidebar.button("🚀 RUN SIMULATION", use_container_width=True):
                 "enable_custom_staff": True,
                 "num_staff": effective_staff,  
                 "quota_limit": quota_limit
-            }
+            },
+            random_seed=manual_seed
         )
         results = engine.run(custom_config=custom_config) 
         
         # Store in session state (persists across interactions)
         st.session_state.simulation_engine = engine
         st.session_state.simulation_results = results
+
+        if 'seed_used' in results:
+            st.sidebar.success(f"✅ Run complete (Seed: {results['seed_used']})")
 
 # ============================================================================
 # DISPLAY RESULTS
