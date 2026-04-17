@@ -1,580 +1,1178 @@
 """
-Interactive Streamlit Frontend for Thesis Simulation Engine
-Shows step-by-step simulation with queue visualization and request details
+Interactive Streamlit frontend for registrar queue simulation.
+
+Focus:
+- Variant controls (scheduler + allocator + scenario)
+- Reproducibility via random seed
+- Frame-by-frame playback from engine event log
+- Metrics, charts, request inspection, compare mode, exports
 """
 
-import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-from datetime import datetime, timedelta
-import sys
+import json
 import os
+import sys
+import time as tm
+from datetime import datetime, time
+from typing import Dict, List
 
-# Add project root to path so frontend1 can import backend1 modules reliably
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
 
-from backend1.scheduler_engine1 import (
-    SimulationEngine, DocumentRequest, COLLEGES, DOCUMENT_COMPLEXITY, 
-    COLLEGE_POPULATION, REQUESTER_PRIORITY
+
+# Add project root to path so frontend1 can import backend1 modules reliably.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from backend1.scheduler_engine1 import (  # noqa: E402
+    COLLEGES,
+    DOCUMENT_COMPLEXITY,
+    PRIORITY_WEIGHTS,
+    SimulationEngine,
 )
 
+
 # ============================================================================
-# STREAMLIT PAGE CONFIG
+# PAGE CONFIG
 # ============================================================================
 
 st.set_page_config(
     page_title="Thesis Simulation Dashboard",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 st.title("📊 Registrar Queue Simulation Dashboard")
+
+
+# ============================================================================
+# CONSTANTS + STATE HELPERS
+# ============================================================================
+
+PRESET_FILE = os.path.join(os.path.dirname(__file__), "saved_presets.json")
+
+SCHEDULER_OPTIONS = ["FCFS", "WEIGHTED"]
+ALLOCATOR_OPTIONS = ["college_based", "workload_based", "pooled", "quota_free"]
+
+SPEED_OPTIONS = {
+    "0.25x": 1.20,
+    "0.50x": 0.80,
+    "1.00x": 0.45,
+    "2.00x": 0.20,
+    "4.00x": 0.10,
+}
+
+DEFAULT_STATE = {
+    "scheduler_type": "FCFS",
+    "allocator_type": "college_based",
+    "num_staff": 6,
+    "quota_limit": 20,
+    "enable_absence": False,
+    "total_requests": 200,
+    "urgency_base": 5,
+    "imbalance_factor": 0,
+    "num_absent_staff": 0,
+    "work_start_time": time(8, 0),
+    "work_end_time": time(17, 0),
+    "seed_mode": "Auto",
+    "manual_seed": 12345,
+    "w_urgency": int(PRIORITY_WEIGHTS["urgency"] * 100),
+    "w_requester": int(PRIORITY_WEIGHTS["requester_type"] * 100),
+    "w_waiting": int(PRIORITY_WEIGHTS["waiting_time"] * 100),
+    "w_document": int(PRIORITY_WEIGHTS["document_type"] * 100),
+    "playback_frame": 0,
+    "playback_frame_ui": 0,
+    "playback_speed": "1.00x",
+    "playback_playing": False,
+}
+
+
+def initialize_state():
+    for key, value in DEFAULT_STATE.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+    if "simulation_engine" not in st.session_state:
+        st.session_state.simulation_engine = None
+    if "simulation_results" not in st.session_state:
+        st.session_state.simulation_results = None
+    if "comparison_df" not in st.session_state:
+        st.session_state.comparison_df = None
+    if "last_run_config" not in st.session_state:
+        st.session_state.last_run_config = None
+
+
+def load_presets() -> Dict[str, Dict]:
+    if not os.path.exists(PRESET_FILE):
+        return {}
+    try:
+        with open(PRESET_FILE, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_presets(presets: Dict[str, Dict]):
+    with open(PRESET_FILE, "w", encoding="utf-8") as handle:
+        json.dump(presets, handle, indent=2)
+
+
+def collect_ui_config() -> Dict:
+    return {
+        "scheduler_type": st.session_state.scheduler_type,
+        "allocator_type": st.session_state.allocator_type,
+        "num_staff": int(st.session_state.num_staff),
+        "quota_limit": int(st.session_state.quota_limit),
+        "enable_absence": bool(st.session_state.enable_absence),
+        "total_requests": int(st.session_state.total_requests),
+        "urgency_base": int(st.session_state.urgency_base),
+        "imbalance_factor": int(st.session_state.imbalance_factor),
+        "num_absent_staff": int(st.session_state.num_absent_staff),
+        "work_start": st.session_state.work_start_time.strftime("%H:%M"),
+        "work_end": st.session_state.work_end_time.strftime("%H:%M"),
+        "seed_mode": st.session_state.seed_mode,
+        "manual_seed": int(st.session_state.manual_seed),
+        "weights_raw": {
+            "urgency": int(st.session_state.w_urgency),
+            "requester_type": int(st.session_state.w_requester),
+            "waiting_time": int(st.session_state.w_waiting),
+            "document_type": int(st.session_state.w_document),
+        },
+    }
+
+
+def apply_ui_config(config: Dict):
+    if not isinstance(config, dict):
+        return
+
+    st.session_state.scheduler_type = config.get("scheduler_type", st.session_state.scheduler_type)
+    st.session_state.allocator_type = config.get("allocator_type", st.session_state.allocator_type)
+    st.session_state.num_staff = int(config.get("num_staff", st.session_state.num_staff))
+    st.session_state.quota_limit = int(config.get("quota_limit", st.session_state.quota_limit))
+
+    enable_absence = config.get("enable_absence")
+    if enable_absence is None:
+        enable_absence = int(config.get("num_absent_staff", 0)) > 0
+    st.session_state.enable_absence = bool(enable_absence)
+
+    st.session_state.total_requests = int(config.get("total_requests", st.session_state.total_requests))
+    st.session_state.urgency_base = int(config.get("urgency_base", st.session_state.urgency_base))
+    st.session_state.imbalance_factor = int(config.get("imbalance_factor", st.session_state.imbalance_factor))
+
+    max_absent = max(0, st.session_state.num_staff - 1)
+    if st.session_state.enable_absence and max_absent > 0:
+        st.session_state.num_absent_staff = min(
+            max(1, int(config.get("num_absent_staff", st.session_state.num_absent_staff))),
+            max_absent,
+        )
+    else:
+        st.session_state.num_absent_staff = 0
+
+    try:
+        work_start = datetime.strptime(config.get("work_start", "08:00"), "%H:%M").time()
+        work_end = datetime.strptime(config.get("work_end", "17:00"), "%H:%M").time()
+        st.session_state.work_start_time = work_start
+        st.session_state.work_end_time = work_end
+    except Exception:
+        pass
+
+    st.session_state.seed_mode = config.get("seed_mode", st.session_state.seed_mode)
+    st.session_state.manual_seed = int(config.get("manual_seed", st.session_state.manual_seed))
+
+    raw = config.get("weights_raw", {})
+    st.session_state.w_urgency = int(raw.get("urgency", st.session_state.w_urgency))
+    st.session_state.w_requester = int(raw.get("requester_type", st.session_state.w_requester))
+    st.session_state.w_waiting = int(raw.get("waiting_time", st.session_state.w_waiting))
+    st.session_state.w_document = int(raw.get("document_type", st.session_state.w_document))
+
+
+def normalized_weights_from_ui() -> Dict[str, float]:
+    raw = {
+        "urgency": float(st.session_state.w_urgency),
+        "requester_type": float(st.session_state.w_requester),
+        "waiting_time": float(st.session_state.w_waiting),
+        "document_type": float(st.session_state.w_document),
+    }
+    total = sum(raw.values())
+    if total <= 0:
+        return PRIORITY_WEIGHTS.copy()
+    return {key: value / total for key, value in raw.items()}
+
+
+def clear_run_state():
+    st.session_state.simulation_engine = None
+    st.session_state.simulation_results = None
+    st.session_state.comparison_df = None
+    st.session_state.last_run_config = None
+    st.session_state.playback_frame = 0
+    st.session_state.playback_frame_ui = 0
+    st.session_state.playback_playing = False
+
+
+def build_engine_and_run_config() -> Dict:
+    weights = normalized_weights_from_ui()
+    manual_seed = int(st.session_state.manual_seed) if st.session_state.seed_mode == "Manual" else None
+
+    engine_kwargs = {
+        "scheduler_type": st.session_state.scheduler_type,
+        "allocator_type": st.session_state.allocator_type,
+        "staff_config": {
+            "num_staff": int(st.session_state.num_staff),
+            "quota_limit": int(st.session_state.quota_limit),
+        },
+        "priority_weights": weights,
+        "random_seed": manual_seed,
+        "work_start": st.session_state.work_start_time.strftime("%H:%M"),
+        "work_end": st.session_state.work_end_time.strftime("%H:%M"),
+    }
+
+    run_config = {
+        "scenario": "custom",
+        "total_requests": int(st.session_state.total_requests),
+        "urgency_base": int(st.session_state.urgency_base),
+        "imbalance_factor": int(st.session_state.imbalance_factor),
+        "num_absent_staff": int(st.session_state.num_absent_staff) if st.session_state.enable_absence else 0,
+    }
+
+    export_bundle = {
+        "engine_kwargs": engine_kwargs,
+        "run_config": run_config,
+        "ui_config": collect_ui_config(),
+    }
+    return export_bundle
+
+
+def run_simulation_now():
+    payload = build_engine_and_run_config()
+    engine = SimulationEngine(**payload["engine_kwargs"])
+    results = engine.run(custom_config=payload["run_config"])
+
+    st.session_state.simulation_engine = engine
+    st.session_state.simulation_results = results
+    st.session_state.last_run_config = payload
+    st.session_state.playback_frame = 0
+    st.session_state.playback_frame_ui = 0
+    st.session_state.playback_playing = False
+
+
+def parse_event_time(value: str) -> datetime:
+    try:
+        return datetime.fromisoformat(value)
+    except Exception:
+        return datetime.now()
+
+
+def routing_events(event_log: List[Dict]) -> List[Dict]:
+    """Keep only request-routing decisions for request-by-request playback."""
+    decision_types = {"ASSIGN", "WAITING"}
+    return [event for event in event_log if event.get("event_type") in decision_types]
+
+
+def playback_state(decisions: List[Dict], step: int) -> Dict:
+    if not decisions:
+        return {
+            "current_event": None,
+            "assignments": [],
+            "waiting": [],
+            "processed_count": 0,
+            "assigned_count": 0,
+            "waiting_count": 0,
+            "staff_flow": {},
+        }
+
+    step = max(0, min(step, len(decisions) - 1))
+    chunk = decisions[: step + 1]
+
+    assignments = []
+    waiting = []
+    staff_flow: Dict[str, List[str]] = {}
+
+    for item in chunk:
+        kind = item.get("event_type")
+        if kind == "ASSIGN":
+            assignments.append(
+                {
+                    "Time": item.get("time"),
+                    "Request": item.get("request_id"),
+                    "College": item.get("college"),
+                    "Staff": item.get("staff_id"),
+                    "Queue Wait (h)": item.get("queue_wait_hours", "-"),
+                    "Mode": item.get("details", ""),
+                }
+            )
+            staff_key = item.get("staff_id") or "UNASSIGNED"
+            staff_flow.setdefault(staff_key, []).append(item.get("request_id"))
+        elif kind == "WAITING":
+            waiting.append(
+                {
+                    "Time": item.get("time"),
+                    "Request": item.get("request_id"),
+                    "College": item.get("college"),
+                    "Reason": item.get("details", ""),
+                }
+            )
+
+    return {
+        "current_event": chunk[-1],
+        "assignments": assignments,
+        "waiting": waiting,
+        "processed_count": len(chunk),
+        "assigned_count": len(assignments),
+        "waiting_count": len(waiting),
+        "staff_flow": staff_flow,
+    }
+
+
+def on_playback_slider_change():
+    """Sync slider position to internal request-step state and pause autoplay."""
+    st.session_state.playback_playing = False
+    st.session_state.playback_frame = int(st.session_state.playback_frame_ui)
+
+
+def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
+    """Keep full staff history and visually separate each assignment day."""
+    if not rows:
+        return []
+
+    ordered_rows = sorted(
+        rows,
+        key=lambda item: parse_event_time(str(item.get("Assigned At", ""))),
+    )
+
+    display_rows: List[Dict] = []
+    last_day = None
+    day_block = 0
+
+    for row in ordered_rows:
+        assigned_at_raw = row.get("Assigned At")
+        assigned_at_dt = parse_event_time(str(assigned_at_raw)) if assigned_at_raw else None
+        assigned_day = assigned_at_dt.date() if assigned_at_dt else None
+
+        if assigned_day != last_day:
+            if last_day is not None:
+                # Insert a visible day divider row between day blocks.
+                divider_text = f"--- Day {day_block + 1} Start ({assigned_day.isoformat() if assigned_day else '-'}) ---"
+                display_rows.append(
+                    {
+                        "Day Block": divider_text,
+                        "Request": "",
+                        "College": "",
+                        "Document": "",
+                        "Queue Wait (h)": "",
+                        "Assigned At": "",
+                    }
+                )
+            day_block += 1
+            day_label = f"Day {day_block} ({assigned_day.isoformat() if assigned_day else '-'})"
+        else:
+            day_label = ""
+
+        display_rows.append(
+            {
+                "Day Block": day_label,
+                "Request": row.get("Request", ""),
+                "College": row.get("College", ""),
+                "Document": row.get("Document", ""),
+                "Queue Wait (h)": row.get("Queue Wait (h)", ""),
+                "Assigned At": row.get("Assigned At", ""),
+            }
+        )
+        last_day = assigned_day
+
+    return display_rows
+
+
+initialize_state()
+
 
 # ============================================================================
 # SIDEBAR CONTROLS
 # ============================================================================
 
-st.sidebar.header("🎛️ Simulation Parameters")
+st.sidebar.header("🎛️ Simulation Controls")
 
-scheduler_type = st.sidebar.selectbox(
-    "Scheduler Type",
-    ["FCFS"],
-    help="FCFS: First-Come-First-Served"
+run_col, reset_col = st.sidebar.columns(2)
+run_clicked = run_col.button("🚀 Run", use_container_width=True)
+reset_clicked = reset_col.button("🧹 Reset", use_container_width=True)
+
+if reset_clicked:
+    clear_run_state()
+    st.rerun()
+
+st.sidebar.selectbox("Scheduler", SCHEDULER_OPTIONS, key="scheduler_type")
+st.sidebar.selectbox("Allocator", ALLOCATOR_OPTIONS, key="allocator_type")
+
+st.sidebar.subheader("Capacity and Policy")
+st.sidebar.slider("Number of Staff", min_value=1, max_value=6, step=1, key="num_staff")
+st.sidebar.slider("Daily Quota per Staff", min_value=1, max_value=60, step=1, key="quota_limit")
+
+max_absent_staff = max(0, int(st.session_state.num_staff) - 1)
+st.sidebar.checkbox(
+    "Enable Staff Absence",
+    key="enable_absence",
+    disabled=(max_absent_staff == 0),
+    help="Turn on to model staff being absent during the run.",
 )
 
-allocator_type = st.sidebar.selectbox(
-    "Allocator Strategy",
-    ["college_based", "workload_based", "pooled", "quota_free"],
-    help="How to assign requests to staff"
-)
+if max_absent_staff == 0:
+    st.session_state.enable_absence = False
+    st.session_state.num_absent_staff = 0
+elif st.session_state.enable_absence:
+    if st.session_state.num_absent_staff < 1:
+        st.session_state.num_absent_staff = 1
+    if st.session_state.num_absent_staff > max_absent_staff:
+        st.session_state.num_absent_staff = max_absent_staff
 
-num_staff = st.sidebar.slider(
-    "Number of Staff",
-    min_value=1,
-    max_value=6,
-    value=6,
-    help="1 staff per college (6 colleges total)"
-)
-
-total_requests = st.sidebar.slider(
-        "Total Daily Requests", min_value=50, max_value=500, value=200, step=10,
-        help="Volume of requests arriving in one day"
+    st.sidebar.slider(
+        "Number of Absent Staff",
+        min_value=1,
+        max_value=max_absent_staff,
+        step=1,
+        key="num_absent_staff",
     )
+else:
+    st.session_state.num_absent_staff = 0
 
-enable_absence = st.sidebar.checkbox("Enable Staff Absence", value=False)
-num_absent = 0
-if enable_absence:
-    num_absent = st.sidebar.slider(
-        "Number of Absent Staff", min_value=1, max_value=max(1, num_staff-1), value=1, step=1,
-        help="Staff removed before simulation starts"
+st.sidebar.time_input("Workday Start", key="work_start_time")
+st.sidebar.time_input("Workday End", key="work_end_time")
+
+st.sidebar.subheader("Demand")
+st.sidebar.slider("Total Daily Requests", min_value=50, max_value=500, step=10, key="total_requests")
+st.sidebar.slider("Average Urgency (1-10)", min_value=1, max_value=10, step=1, key="urgency_base")
+st.sidebar.slider("College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
+
+st.sidebar.subheader("Seed")
+st.sidebar.radio("Seed Mode", ["Auto", "Manual"], key="seed_mode", horizontal=True)
+if st.session_state.seed_mode == "Manual":
+    st.sidebar.number_input(
+        "Manual Seed",
+        min_value=1,
+        max_value=2_147_483_647,
+        step=1,
+        key="manual_seed",
     )
+else:
+    st.sidebar.caption("Auto mode will generate a seed and show it in the results.")
 
-urgency_base = st.sidebar.slider(
-    "Average Urgency Level (1-10)", min_value=1, max_value=10, value=5, step=1,
-    help="Higher = more urgent requests in the queue"
+if st.session_state.scheduler_type == "WEIGHTED":
+    st.sidebar.subheader("Weighted Priority")
+    st.sidebar.slider("Weight: urgency", min_value=0, max_value=100, step=1, key="w_urgency")
+    st.sidebar.slider("Weight: requester_type", min_value=0, max_value=100, step=1, key="w_requester")
+    st.sidebar.slider("Weight: waiting_time", min_value=0, max_value=100, step=1, key="w_waiting")
+    st.sidebar.slider("Weight: document_type", min_value=0, max_value=100, step=1, key="w_document")
+
+    current_weights = normalized_weights_from_ui()
+    st.sidebar.caption(
+        "Normalized: "
+        + ", ".join(f"{k}={v:.2f}" for k, v in current_weights.items())
     )
+    st.sidebar.info("Tie-break rule: earlier submission_time wins when scores are equal.")
 
-imbalance_factor = st.sidebar.slider(
-    "College Workload Imbalance (0-100%)", min_value=0, max_value=100, value=0, step=5,
-    help="0% = balanced across colleges, 100% = COE gets heavy overload"
-    )
+st.sidebar.subheader("Presets")
+presets = load_presets()
+preset_names = ["(select)"] + sorted(list(presets.keys()))
+selected_preset = st.sidebar.selectbox("Saved Presets", preset_names)
 
+load_col, save_col = st.sidebar.columns(2)
+load_clicked = load_col.button("Load", use_container_width=True)
+save_clicked = save_col.button("Save", use_container_width=True)
 
-quota_limit = st.sidebar.slider(
-    "Daily Quota per Staff",
-    min_value=5,
-    max_value=50,
-    value=20,
-    step=5,
-    help="Max requests per staff per day"
-)
+preset_name_input = st.sidebar.text_input("Preset Name", value="")
+
+if load_clicked and selected_preset in presets:
+    apply_ui_config(presets[selected_preset])
+    st.rerun()
+
+if save_clicked:
+    name = preset_name_input.strip()
+    if name:
+        presets[name] = collect_ui_config()
+        save_presets(presets)
+        st.sidebar.success(f"Saved preset: {name}")
+    else:
+        st.sidebar.warning("Enter a preset name before saving.")
+
+if run_clicked:
+    with st.spinner("Running simulation..."):
+        run_simulation_now()
+
 
 # ============================================================================
-# RUN SIMULATION
+# MAIN RESULTS
 # ============================================================================
 
-# Initialize session state for results
-if "simulation_engine" not in st.session_state:
-    st.session_state.simulation_engine = None
-if "simulation_results" not in st.session_state:
-    st.session_state.simulation_results = None
+if not st.session_state.simulation_results or not st.session_state.simulation_engine:
+    st.info("Use the sidebar controls, then click Run to start the simulation.")
+    st.stop()
 
-if st.sidebar.button("🚀 RUN SIMULATION", use_container_width=True):
-    with st.spinner("⏳ Running simulation..."):
-        # Calculate effective staff (total - absent)
-        effective_staff = max(1, num_staff - num_absent)
-        
-        # Build custom config dict
-        custom_config = {
-            "total_requests": total_requests,
-            "enable_absence": enable_absence,
-            "num_absent_staff": num_absent,
-            "urgency_base": urgency_base,
-            "imbalance_factor": imbalance_factor
+engine = st.session_state.simulation_engine
+results = st.session_state.simulation_results
+
+st.success("Simulation complete.")
+
+seed_used = results.get("seed_used")
+st.caption(
+    f"Seed used: {seed_used} | Scheduler: {results.get('scheduler_type')} | "
+    f"Allocator: {results.get('allocator_type')} | Mode: custom sliders"
+)
+
+
+# ============================================================================
+# PLAYBACK CONTROLS
+# ============================================================================
+
+st.header("Playback")
+
+event_log = results.get("event_log", [])
+decisions = routing_events(event_log)
+if not decisions:
+    st.warning("No request-routing decisions available for playback.")
+else:
+    max_step = len(decisions) - 1
+    st.session_state.playback_frame = min(st.session_state.playback_frame, max_step)
+    st.session_state.playback_frame_ui = min(st.session_state.playback_frame_ui, max_step)
+
+    force_slider_sync = False
+
+    controls_col1, controls_col2, controls_col3, controls_col4, controls_col5, controls_col6 = st.columns(6)
+
+    if controls_col1.button("▶ Play", use_container_width=True):
+        st.session_state.playback_playing = True
+    if controls_col2.button("⏸ Pause", use_container_width=True):
+        st.session_state.playback_playing = False
+    if controls_col3.button("◀ Step", use_container_width=True):
+        st.session_state.playback_playing = False
+        st.session_state.playback_frame = max(0, st.session_state.playback_frame - 1)
+        force_slider_sync = True
+    if controls_col4.button("Step ▶", use_container_width=True):
+        st.session_state.playback_playing = False
+        st.session_state.playback_frame = min(max_step, st.session_state.playback_frame + 1)
+        force_slider_sync = True
+    if controls_col5.button("⏭ End", use_container_width=True):
+        st.session_state.playback_playing = False
+        st.session_state.playback_frame = max_step
+        force_slider_sync = True
+
+    controls_col6.selectbox("Speed", list(SPEED_OPTIONS.keys()), key="playback_speed")
+
+    # Sync slider only after programmatic changes (buttons/autoplay), not on user drags.
+    if force_slider_sync or (
+        st.session_state.playback_playing
+        and st.session_state.playback_frame_ui != st.session_state.playback_frame
+    ):
+        st.session_state.playback_frame_ui = st.session_state.playback_frame
+
+    st.slider(
+        "Request Step",
+        min_value=0,
+        max_value=max_step,
+        key="playback_frame_ui",
+        on_change=on_playback_slider_change,
+    )
+
+    frame_data = playback_state(decisions, st.session_state.playback_frame)
+    current_event = frame_data["current_event"]
+
+    request_lookup = {}
+    for request_item in results.get("generated_requests", []):
+        if isinstance(request_item, dict) and request_item.get("request_id"):
+            request_lookup[request_item["request_id"]] = request_item
+
+    staff_rows: Dict[str, List[Dict]] = {}
+    staff_meta: Dict[str, Dict] = {}
+    for staff in engine.staff_pool:
+        staff_rows[staff.staff_id] = []
+        staff_meta[staff.staff_id] = {
+            "college": staff.college_affiliation,
+            "quota": staff.quota_limit,
         }
-        
-        engine = SimulationEngine(
-            scheduler_type=scheduler_type,
-            allocator_type=allocator_type,
-            staff_config={
-                "enable_custom_staff": True,
-                "num_staff": effective_staff,  
-                "quota_limit": quota_limit
+
+    for assignment in frame_data["assignments"]:
+        staff_id = assignment.get("Staff") or "UNASSIGNED"
+        request_id = assignment.get("Request")
+        request_meta = request_lookup.get(request_id, {})
+
+        if staff_id not in staff_rows:
+            staff_rows[staff_id] = []
+            staff_meta[staff_id] = {"college": "-", "quota": None}
+
+        staff_rows[staff_id].append(
+            {
+                "Request": request_id,
+                "College": request_meta.get("college", assignment.get("College")),
+                "Document": request_meta.get("document_type", "-"),
+                "Queue Wait (h)": assignment.get("Queue Wait (h)"),
+                "Assigned At": assignment.get("Time"),
             }
         )
-        results = engine.run(custom_config=custom_config) 
-        
-        # Store in session state (persists across interactions)
-        st.session_state.simulation_engine = engine
-        st.session_state.simulation_results = results
+
+    waiting_rows = []
+    for waiting_item in frame_data["waiting"]:
+        request_id = waiting_item.get("Request")
+        request_meta = request_lookup.get(request_id, {})
+        waiting_rows.append(
+            {
+                "Request": request_id,
+                "College": request_meta.get("college", waiting_item.get("College")),
+                "Document": request_meta.get("document_type", "-"),
+                "Submitted": request_meta.get("submission_time", "-"),
+                "Reason": waiting_item.get("Reason", ""),
+                "Event Time": waiting_item.get("Time"),
+            }
+        )
+
+    if current_event:
+        current_time = parse_event_time(current_event.get("time", ""))
+
+        routed_request_ids = set()
+        for assign_item in frame_data["assignments"]:
+            if assign_item.get("Request"):
+                routed_request_ids.add(assign_item["Request"])
+        for waiting_item in frame_data["waiting"]:
+            if waiting_item.get("Request"):
+                routed_request_ids.add(waiting_item["Request"])
+
+        pending_queue_rows = []
+        for request_id, request_meta in request_lookup.items():
+            submission_raw = request_meta.get("submission_time")
+            if not submission_raw:
+                continue
+            submission_time = parse_event_time(submission_raw)
+            if submission_time <= current_time and request_id not in routed_request_ids:
+                pending_queue_rows.append(
+                    {
+                        "Request": request_id,
+                        "College": request_meta.get("college", "-"),
+                        "Document": request_meta.get("document_type", "-"),
+                        "Submitted": submission_raw,
+                        "Pending Wait (h)": round((current_time - submission_time).total_seconds() / 3600.0, 2),
+                        "_sort": submission_time,
+                    }
+                )
+
+        pending_queue_rows.sort(key=lambda row: row["_sort"])
+        for row in pending_queue_rows:
+            row.pop("_sort", None)
+
+        card1, card2, card3, card4, card5 = st.columns(5)
+        card1.metric("Simulation Clock", current_time.strftime("%Y-%m-%d %H:%M"))
+        card2.metric("Current Request Step", f"{st.session_state.playback_frame}/{max_step}")
+        card3.metric("Processed Decisions", frame_data["processed_count"])
+        card4.metric("Assigned So Far", frame_data["assigned_count"])
+        card5.metric("Queue Size Now", len(pending_queue_rows) + frame_data["waiting_count"])
+
+        st.markdown(
+            "**Current Routing Decision:** "
+            f"{current_event.get('event_type')} | "
+            f"Request={current_event.get('request_id')} | "
+            f"Staff={current_event.get('staff_id')} | "
+            f"Details={current_event.get('details')}"
+        )
+
+        st.subheader("Staff Capacity View")
+        quota_enforced = results.get("allocator_type") != "quota_free"
+        current_day = current_time.date()
+        capacity_rows = []
+        for staff in engine.staff_pool:
+            rows_for_staff = staff_rows.get(staff.staff_id, [])
+            total_assigned = len(rows_for_staff)
+            assigned_today = 0
+            for row in rows_for_staff:
+                assigned_at = row.get("Assigned At")
+                if assigned_at and parse_event_time(str(assigned_at)).date() == current_day:
+                    assigned_today += 1
+
+            quota_value = staff.quota_limit if quota_enforced else None
+            row = {
+                "Staff": staff.staff_id,
+                "College": staff.college_affiliation,
+                "Assigned Today": assigned_today,
+                "Total Assigned": total_assigned,
+            }
+            if quota_enforced:
+                row["Quota/Day"] = quota_value
+                row["Today Fill %"] = round((assigned_today / max(quota_value, 1)) * 100.0, 1)
+            capacity_rows.append(row)
+
+        capacity_df = pd.DataFrame(capacity_rows)
+        assigned_today_map = {
+            row["Staff"]: row["Assigned Today"] for row in capacity_rows
+        }
+        total_assigned_map = {
+            row["Staff"]: row["Total Assigned"] for row in capacity_rows
+        }
+
+        fig_capacity = go.Figure()
+        fig_capacity.add_trace(
+            go.Bar(
+                name="Assigned Today",
+                x=capacity_df["Staff"],
+                y=capacity_df["Assigned Today"],
+                marker_color="#2a9d8f",
+            )
+        )
+        if quota_enforced:
+            fig_capacity.add_trace(
+                go.Bar(
+                    name="Quota per Day",
+                    x=capacity_df["Staff"],
+                    y=capacity_df["Quota/Day"],
+                    marker_color="#e9c46a",
+                    opacity=0.6,
+                )
+            )
+
+        fig_capacity.update_layout(
+            title="Daily Staff Capacity at Current Request Step",
+            xaxis_title="Staff",
+            yaxis_title="Requests",
+            barmode="group",
+            height=360,
+        )
+        st.plotly_chart(fig_capacity, use_container_width=True)
+
+        st.subheader("Live Staff Request Lists")
+        ordered_staff_ids = [staff.staff_id for staff in engine.staff_pool]
+        for idx in range(0, len(ordered_staff_ids), 3):
+            row_ids = ordered_staff_ids[idx: idx + 3]
+            row_cols = st.columns(3)
+            for col, staff_id in zip(row_cols, row_ids):
+                with col:
+                    meta = staff_meta.get(staff_id, {"college": "-", "quota": None})
+                    assigned_today = assigned_today_map.get(staff_id, 0)
+                    total_assigned = total_assigned_map.get(staff_id, 0)
+                    if quota_enforced and meta.get("quota") is not None:
+                        quota_value = int(meta["quota"])
+                        st.metric(
+                            f"{staff_id} ({meta['college']})",
+                            f"{assigned_today}/{quota_value}",
+                            delta=f"Total {total_assigned}",
+                        )
+                        if assigned_today >= quota_value:
+                            st.warning("Quota full at this step")
+                    else:
+                        st.metric(
+                            f"{staff_id} ({meta['college']})",
+                            f"{total_assigned} assigned",
+                        )
+
+                    rows = staff_rows.get(staff_id, [])
+                    if rows:
+                        display_rows = staff_rows_with_day_separators(rows)
+                        st.dataframe(
+                            pd.DataFrame(display_rows),
+                            use_container_width=True,
+                            hide_index=True,
+                            height=340,
+                        )
+                    else:
+                        st.caption("No requests routed here yet.")
+
+        st.subheader("Queue and Waiting Lists")
+        wait_col1, wait_col2 = st.columns(2)
+
+        with wait_col1:
+            st.caption("Pending Queue: requests already arrived but still waiting for a slot.")
+            if pending_queue_rows:
+                st.dataframe(pd.DataFrame(pending_queue_rows), use_container_width=True, hide_index=True)
+            else:
+                st.caption("No pending queue at this step.")
+
+        with wait_col2:
+            st.caption("Unassignable Waiting List: requests that cannot be routed to any staff.")
+            if waiting_rows:
+                st.dataframe(pd.DataFrame(waiting_rows), use_container_width=True, hide_index=True)
+            else:
+                st.caption("No unassignable waiting requests at this step.")
+
+    if st.session_state.playback_playing:
+        if st.session_state.playback_frame < max_step:
+            tm.sleep(SPEED_OPTIONS.get(st.session_state.playback_speed, 0.45))
+            st.session_state.playback_frame += 1
+            st.rerun()
+        else:
+            st.session_state.playback_playing = False
+
 
 # ============================================================================
-# DISPLAY RESULTS
+# KPI METRICS
 # ============================================================================
 
-if st.session_state.simulation_results and st.session_state.simulation_engine:
-    engine = st.session_state.simulation_engine
-    results = st.session_state.simulation_results
-    
-    st.success("✅ Simulation Complete!")
-    
-    # ========================================================================
-    # KEY METRICS (Top Cards)
-    # ========================================================================
-    
-    st.header("📈 Key Metrics")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        processed = results['total_processed']
-        expected = total_requests
-        completion_pct = (processed / expected * 100) if expected > 0 else 0
-        st.metric(
-            "Total Processed",
-            f"{processed}/{expected}",
-            delta=f"{completion_pct:.0f}%" if completion_pct == 100 else f"{completion_pct:.0f}%"
+st.header("Key Metrics")
+
+k1, k2, k3, k4, k5 = st.columns(5)
+with k1:
+    processed = int(results.get("total_processed", 0))
+    expected = int(st.session_state.total_requests)
+    pct = (processed / expected * 100.0) if expected > 0 else 0.0
+    st.metric("Total Processed", f"{processed}/{expected}", f"{pct:.0f}%")
+with k2:
+    st.metric("Avg Queue Wait", f"{results.get('avg_waiting_time_hours', 0):.2f} h")
+with k3:
+    st.metric("Avg Turnaround", f"{results.get('avg_turnaround_days', 0):.2f} d")
+with k4:
+    st.metric("Days Elapsed", f"{results.get('total_days_elapsed', 0):.2f} d")
+with k5:
+    st.metric("Throughput", f"{results.get('throughput_req_per_day', 0):.2f} req/day")
+
+if results.get("absent_staff"):
+    st.warning("Absent staff: " + ", ".join(results.get("absent_staff", [])))
+
+
+# ============================================================================
+# STAFF LOAD + TIMELINE CHARTS
+# ============================================================================
+
+st.header("Staff and Timeline")
+
+chart_col1, chart_col2 = st.columns(2)
+
+with chart_col1:
+    staff_load = results.get("staff_load", {})
+    if staff_load:
+        fig_staff = go.Figure(
+            data=[
+                go.Bar(
+                    x=list(staff_load.keys()),
+                    y=list(staff_load.values()),
+                    marker=dict(color=list(staff_load.values()), colorscale="Blues"),
+                    text=list(staff_load.values()),
+                    textposition="outside",
+                )
+            ]
         )
-    
-    with col2:
-        st.metric(
-            "Days Elapsed",
-            f"{results['total_days_elapsed']:.1f}d",
-            help="Total simulation duration"
+        fig_staff.update_layout(
+            title="Requests Processed per Staff",
+            xaxis_title="Staff",
+            yaxis_title="Processed Requests",
+            height=400,
         )
-    
-    with col3:
-        st.metric(
-            "Avg Queue Wait",
-            f"{results['avg_waiting_time_hours']:.1f}h",
-            delta=f"{results['avg_waiting_time_hours']/24:.1f}d" if results['avg_waiting_time_hours'] > 24 else None
+        st.plotly_chart(fig_staff, use_container_width=True)
+
+with chart_col2:
+    if engine.completed:
+        timeline_rows = []
+        for req in engine.completed:
+            assigned_day = (req.assignment_time.date() - engine.start_time.date()).days + 1
+            timeline_rows.append(
+                {
+                    "Assigned Day": assigned_day,
+                    "College": req.college,
+                    "Count": 1,
+                }
+            )
+        timeline_df = pd.DataFrame(timeline_rows)
+        grouped = timeline_df.groupby(["Assigned Day", "College"]).size().reset_index(name="Count")
+        fig_timeline = px.bar(
+            grouped,
+            x="Assigned Day",
+            y="Count",
+            color="College",
+            title="Assignments per Day by College",
+            height=400,
         )
-    
-    with col4:
-        st.metric(
-            "Avg Turnaround",
-            f"{results['avg_turnaround_days']:.1f}d",
-            help="From submission to completion"
+        st.plotly_chart(fig_timeline, use_container_width=True)
+
+
+# ============================================================================
+# REQUEST INSPECTION
+# ============================================================================
+
+st.header("Request Inspection")
+
+completed_requests = engine.completed
+
+if not completed_requests:
+    st.info("No completed requests to inspect.")
+else:
+    f1, f2, f3 = st.columns(3)
+
+    with f1:
+        filter_college = st.selectbox("Filter by College", ["All"] + COLLEGES)
+    with f2:
+        filter_doc = st.selectbox("Filter by Document", ["All"] + list(DOCUMENT_COMPLEXITY.keys()))
+    with f3:
+        sort_by = st.selectbox(
+            "Sort by",
+            [
+                "Assigned Day",
+                "Submission Time",
+                "Queue Wait Desc",
+                "Queue Wait Asc",
+                "Turnaround Desc",
+            ],
         )
-    
-    with col5:
-        st.metric(
-            "Throughput",
-            f"{results['throughput_req_per_day']:.2f}",
-            help="Requests per day"
-        )
-    
-    # ========================================================================
-    # ABSENT STAFF SECTION
-    # ========================================================================
-    
-    if results.get('absent_staff'):
-        st.warning(f"⚠️ **ABSENT STAFF:** {', '.join(results['absent_staff'])}")
-    
-    # ========================================================================
-    # WAITING QUEUE SECTION
-    # ========================================================================
-    
-    waiting_queue = results.get('waiting_queue', [])
-    if waiting_queue:
-        st.header("📋 Waiting Queue (Unassigned Requests)")
-        st.info(f"**{len(waiting_queue)} requests** stuck in queue due to missing staff")
-        
-        # Build waiting queue table
-        waiting_data = []
-        for idx, req in enumerate(waiting_queue, 1):
-            waiting_data.append({
-                "Order": idx,
-                "Request ID": req.request_id,
+
+    filtered = completed_requests
+    if filter_college != "All":
+        filtered = [req for req in filtered if req.college == filter_college]
+    if filter_doc != "All":
+        filtered = [req for req in filtered if req.document_type == filter_doc]
+
+    if sort_by == "Assigned Day":
+        filtered = sorted(filtered, key=lambda req: (req.assignment_time.date(), req.submission_time))
+    elif sort_by == "Submission Time":
+        filtered = sorted(filtered, key=lambda req: req.submission_time)
+    elif sort_by == "Queue Wait Desc":
+        filtered = sorted(filtered, key=lambda req: req.get_waiting_time_minutes(), reverse=True)
+    elif sort_by == "Queue Wait Asc":
+        filtered = sorted(filtered, key=lambda req: req.get_waiting_time_minutes())
+    else:
+        filtered = sorted(filtered, key=lambda req: req.get_turnaround_time_minutes(), reverse=True)
+
+    table_rows = []
+    for idx, req in enumerate(filtered):
+        assigned_day = (req.assignment_time.date() - engine.start_time.date()).days + 1
+        table_rows.append(
+            {
+                "Row": idx,
+                "Request": req.request_id,
                 "College": req.college,
                 "Document": req.document_type,
                 "Urgency": req.urgency,
                 "Requester": req.requester_type,
-                "Submitted": req.submission_time.strftime("%H:%M")
-            })
-        
-        waiting_df = pd.DataFrame(waiting_data)
-        st.dataframe(waiting_df, use_container_width=True, hide_index=True)
-    
-    # ========================================================================
-    # STAFF LOAD DISTRIBUTION (Bar Chart)
-    # ========================================================================
-    
-    st.header("👥 Staff Load Distribution")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        staff_load_data = results['staff_load']
-        staff_ids = list(staff_load_data.keys())
-        loads = list(staff_load_data.values())
-        
-        fig = go.Figure(data=[
-            go.Bar(
-                x=staff_ids,
-                y=loads,
-                marker=dict(
-                    color=loads,
-                    colorscale='Viridis',
-                    showscale=True
-                ),
-                text=loads,
-                textposition='outside'
-            )
-        ])
-        fig.update_layout(
-            title="Requests per Staff Member",
-            xaxis_title="Staff",
-            yaxis_title="Number of Requests",
-            height=400
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("Load Stats")
-        loads_list = list(staff_load_data.values())
-        st.write(f"**Max Load:** {max(loads_list)} requests")
-        st.write(f"**Min Load:** {min(loads_list)} requests")
-        st.write(f"**Avg Load:** {sum(loads_list)/len(loads_list):.1f} requests")
-        st.write(f"**Imbalance:** {max(loads_list) - min(loads_list)} requests")
-    
-    # ========================================================================
-    # COLLEGE DISTRIBUTION (Pie Chart)
-    # ========================================================================
-    
-    st.header("🏫 College Distribution")
-    
-    college_counts = {}
-    for req in engine.completed:
-        college_counts[req.college] = college_counts.get(req.college, 0) + 1
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        fig = go.Figure(data=[
-            go.Pie(
-                labels=list(college_counts.keys()),
-                values=list(college_counts.values()),
-                hole=0
-            )
-        ])
-        fig.update_layout(title="Requests by College")
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        college_df = pd.DataFrame([
-            {"College": col, "Count": count, "Percentage": f"{count/sum(college_counts.values())*100:.1f}%"}
-            for col, count in sorted(college_counts.items(), key=lambda x: x[1], reverse=True)
-        ])
-        st.dataframe(college_df, use_container_width=True, hide_index=True)
-    
-    # ========================================================================
-    # QUEUE WAIT TIME ANALYSIS (Distribution)
-    # ========================================================================
-    
-    st.header("⏱️ Queue Wait Time Distribution")
-    
-    queue_waits = []
-    for req in engine.completed:
-        wait_hours = (req.assignment_time - req.submission_time).total_seconds() / 3600
-        queue_waits.append(wait_hours)
-    
-    fig = go.Figure(data=[
-        go.Histogram(
-            x=queue_waits,
-            nbinsx=30,
-            marker_color='rgba(0, 100, 80, 0.7)',
-        )
-    ])
-    fig.update_layout(
-        title="Distribution of Queue Wait Times",
-        xaxis_title="Queue Wait (hours)",
-        yaxis_title="Number of Requests",
-        height=400
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # ========================================================================
-    # TIMELINE VISUALIZATION (Requests by Day)
-    # ========================================================================
-    
-    st.header("📅 Assignment Timeline")
-    
-    timeline_data = []
-    for req in engine.completed:
-        assignment_day = int((req.assignment_time - engine.start_time).total_seconds() / 86400) + 1
-        timeline_data.append({
-            "Day": assignment_day,
-            "College": req.college,
-            "Count": 1
-        })
-    
-    timeline_df = pd.DataFrame(timeline_data)
-    timeline_grouped = timeline_df.groupby(["Day", "College"]).size().reset_index(name="Count")
-    
-    fig = px.bar(
-        timeline_grouped,
-        x="Day",
-        y="Count",
-        color="College",
-        title="Requests Assigned Per Day by College",
-        height=400
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # ========================================================================
-    # INTERACTIVE REQUEST BROWSER
-    # ========================================================================
-    
-    st.header("🔍 Browse Individual Requests")
-    
-    # Filters
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        filter_college = st.selectbox(
-            "Filter by College",
-            ["All"] + COLLEGES,
-            key="college_filter"
-        )
-    
-    with col2:
-        filter_document = st.selectbox(
-            "Filter by Document Type",
-            ["All"] + list(DOCUMENT_COMPLEXITY.keys()),
-            key="doc_filter"
-        )
-    
-    with col3:
-        sort_by = st.selectbox(
-            "Sort by",
-            ["Assigned Day (then Submission)", "Submission Time", "Queue Wait (desc)", "Queue Wait (asc)", "Turnaround (desc)"],
-            index=0
-        )
-    
-    # Apply filters
-    filtered_requests = engine.completed
-    
-    if filter_college != "All":
-        filtered_requests = [r for r in filtered_requests if r.college == filter_college]
-    
-    if filter_document != "All":
-        filtered_requests = [r for r in filtered_requests if r.document_type == filter_document]
-    
-    # Sort
-    if sort_by == "Assigned Day (then Submission)":
-        filtered_requests = sorted(
-            filtered_requests,
-            key=lambda r: (
-                int((r.assignment_time - engine.start_time).total_seconds() / 86400),
-                r.submission_time
-            )
-        )
-    elif sort_by == "Queue Wait (desc)":
-        filtered_requests = sorted(
-            filtered_requests,
-            key=lambda r: (r.assignment_time - r.submission_time).total_seconds(),
-            reverse=True
-        )
-    elif sort_by == "Queue Wait (asc)":
-        filtered_requests = sorted(
-            filtered_requests,
-            key=lambda r: (r.assignment_time - r.submission_time).total_seconds()
-        )
-    elif sort_by == "Turnaround (desc)":
-        filtered_requests = sorted(
-            filtered_requests,
-            key=lambda r: (r.completion_time - r.submission_time).total_seconds(),
-            reverse=True
-        )
-    else:  # Submission Time
-        filtered_requests = sorted(filtered_requests, key=lambda r: r.submission_time)
-    
-    # Display table
-    st.subheader(f"Showing {len(filtered_requests)} requests (sorted by {sort_by})")
-    
-    request_table_data = []
-    for arrival_order, req in enumerate(filtered_requests):
-        queue_wait = (req.assignment_time - req.submission_time).total_seconds() / 3600
-        turnaround = (req.completion_time - req.submission_time).total_seconds() / 86400
-        assignment_day = int((req.assignment_time - engine.start_time).total_seconds() / 86400) + 1
-        
-        request_table_data.append({
-            "Arrival #": arrival_order,
-            "Request": req.request_id,
-            "College": req.college,
-            "Document": req.document_type,
-            "Urgency": req.urgency,
-            "Requester": req.requester_type,
-            "Queue Wait (h)": f"{queue_wait:.1f}",
-            "Turnaround (d)": f"{turnaround:.2f}",
-            "Assigned Day": assignment_day,
-            "Staff": req.assigned_staff
-        })
-    
-    request_df = pd.DataFrame(request_table_data)
-    
-    # Make it clickable
-    selected_row = st.dataframe(
-        request_df,
-        use_container_width=True,
-        hide_index=True,
-        key="request_table"
-    )
-    
-    # Request details picker
-    st.subheader("📋 Request Details")
-    
-    request_idx = st.number_input(
-        "Select Request ID to View Details",
-        min_value=0,
-        max_value=len(filtered_requests)-1,
-        help="Enter the ID from the table above"
-    )
-    
-    if request_idx < len(filtered_requests):
-        selected_req = filtered_requests[request_idx]
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader(f"Request {selected_req.request_id}")
-            st.write(f"**College:** {selected_req.college}")
-            st.write(f"**Document Type:** {selected_req.document_type}")
-            st.write(f"**Urgency Level:** {selected_req.urgency}/10")
-            st.write(f"**Requester Type:** {selected_req.requester_type}")
-            st.write(f"**Assigned Staff:** {selected_req.assigned_staff}")
-        
-        with col2:
-            st.subheader("Timeline")
-            
-            arrival_time = selected_req.submission_time.strftime("%Y-%m-%d %H:%M")
-            assignment_time = selected_req.assignment_time.strftime("%Y-%m-%d %H:%M")
-            completion_time = selected_req.completion_time.strftime("%Y-%m-%d %H:%M")
-            
-            st.write(f"**Arrival (Submission):** {arrival_time}")
-            st.write(f"**Assignment:** {assignment_time}")
-            st.write(f"**Completion:** {completion_time}")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            queue_wait_hours = (selected_req.assignment_time - selected_req.submission_time).total_seconds() / 3600
-            st.metric("Queue Wait Time", f"{queue_wait_hours:.1f} hours", delta=f"{queue_wait_hours/24:.2f} days")
-        
-        with col2:
-            process_days = (selected_req.completion_time - selected_req.assignment_time).total_seconds() / 86400
-            st.metric("Processing Time", f"{process_days:.2f} days", delta=f"{process_days*24:.1f} hours")
-        
-        # Timeline visualization for this request
-        st.subheader("Request Lifecycle")
-        
-        timeline_events = [
-            {
-                "Event": "Submitted",
-                "Time": selected_req.submission_time,
-                "Status": "Waiting in Queue",
-                "Color": "orange"
-            },
-            {
-                "Event": f"Assigned to {selected_req.assigned_staff}",
-                "Time": selected_req.assignment_time,
-                "Status": "In Progress",
-                "Color": "blue"
-            },
-            {
-                "Event": "Completed",
-                "Time": selected_req.completion_time,
-                "Status": "Done",
-                "Color": "green"
+                "Queue Wait (h)": round(req.get_waiting_time_minutes() / 60.0, 2),
+                "Turnaround (d)": round(req.get_turnaround_time_minutes() / 1440.0, 2),
+                "Assigned Day": assigned_day,
+                "Staff": req.assigned_staff,
             }
-        ]
-        
-        timeline_df = pd.DataFrame(timeline_events)
-        
-        fig = go.Figure()
-        for idx, event in enumerate(timeline_events):
-            fig.add_trace(go.Scatter(
-                x=[event["Time"]],
-                y=[idx],
-                mode='markers+text',
-                name=event["Event"],
-                text=[event["Event"]],
-                textposition="top center",
-                marker=dict(size=15, color=event["Color"])
-            ))
-        
-        fig.update_layout(
-            title="Request Lifecycle Timeline",
-            xaxis_title="Time",
-            yaxis_title="",
-            height=300,
-            showlegend=False,
-            yaxis=dict(showticklabels=False)
         )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # ========================================================================
-    # COMPARISON SECTION
-    # ========================================================================
-    
-    st.header("📊 Run Comparison")
-    
-    if st.button("Compare with Different Allocator", use_container_width=True):
-        st.info("ℹ️ This would run simulations with different allocators and show comparison")
-    
-    # ========================================================================
-    # EXPORT DATA
-    # ========================================================================
-    
-    st.header("💾 Export Results")
-    
-    export_data = {
-        "Request ID": [r.request_id for r in engine.completed],
-        "College": [r.college for r in engine.completed],
-        "Document Type": [r.document_type for r in engine.completed],
-        "Urgency": [r.urgency for r in engine.completed],
-        "Requester Type": [r.requester_type for r in engine.completed],
-        "Submission Time": [r.submission_time for r in engine.completed],
-        "Assignment Time": [r.assignment_time for r in engine.completed],
-        "Completion Time": [r.completion_time for r in engine.completed],
-        "Queue Wait (hours)": [(r.assignment_time - r.submission_time).total_seconds() / 3600 for r in engine.completed],
-        "Turnaround (days)": [(r.completion_time - r.submission_time).total_seconds() / 86400 for r in engine.completed],
-        "Assigned Staff": [r.assigned_staff for r in engine.completed]
-    }
-    
-    export_df = pd.DataFrame(export_data)
-    
-    csv = export_df.to_csv(index=False)
-    st.download_button(
-        label="📥 Download Results as CSV",
-        data=csv,
-        file_name=f"simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv",
-        use_container_width=True
+
+    table_df = pd.DataFrame(table_rows)
+    st.dataframe(table_df, use_container_width=True, hide_index=True)
+
+    st.subheader("Detailed Request Panel")
+    pick_index = st.number_input(
+        "Select Row",
+        min_value=0,
+        max_value=max(0, len(filtered) - 1),
+        value=0,
+        step=1,
     )
 
-else:
-    st.info("👈 Configure parameters on the left and click 'RUN SIMULATION' to begin")
+    selected_req = filtered[int(pick_index)]
+    d1, d2 = st.columns(2)
+
+    with d1:
+        st.write(f"**Request ID:** {selected_req.request_id}")
+        st.write(f"**College:** {selected_req.college}")
+        st.write(f"**Document Type:** {selected_req.document_type}")
+        st.write(f"**Urgency:** {selected_req.urgency}/10")
+        st.write(f"**Requester Type:** {selected_req.requester_type}")
+        st.write(f"**Assigned Staff:** {selected_req.assigned_staff}")
+
+    with d2:
+        st.write(f"**Submission:** {selected_req.submission_time}")
+        st.write(f"**Assignment:** {selected_req.assignment_time}")
+        st.write(f"**Completion:** {selected_req.completion_time}")
+        st.write(f"**Queue Wait:** {selected_req.get_waiting_time_minutes() / 60.0:.2f} h")
+        st.write(f"**Turnaround:** {selected_req.get_turnaround_time_minutes() / 1440.0:.2f} d")
+
+    st.subheader("Request Lifecycle Timeline")
+
+    lifecycle_times = [
+        selected_req.submission_time,
+        selected_req.assignment_time,
+        selected_req.completion_time,
+    ]
+    lifecycle_labels = [
+        "Submitted",
+        f"Assigned ({selected_req.assigned_staff})",
+        "Completed",
+    ]
+    lifecycle_colors = ["#f4a261", "#2a9d8f", "#264653"]
+    lifecycle_y = [2.0, 1.0, 0.0]
+
+    # Stair path so labels do not get mushed in a single horizontal line.
+    step_x = [
+        lifecycle_times[0],
+        lifecycle_times[1],
+        lifecycle_times[1],
+        lifecycle_times[2],
+        lifecycle_times[2],
+    ]
+    step_y = [
+        lifecycle_y[0],
+        lifecycle_y[0],
+        lifecycle_y[1],
+        lifecycle_y[1],
+        lifecycle_y[2],
+    ]
+
+    fig_request_timeline = go.Figure()
+    fig_request_timeline.add_trace(
+        go.Scatter(
+            x=step_x,
+            y=step_y,
+            mode="lines",
+            line=dict(color="#8d99ae", width=3),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+    fig_request_timeline.add_trace(
+        go.Scatter(
+            x=lifecycle_times,
+            y=lifecycle_y,
+            mode="markers+text",
+            text=lifecycle_labels,
+            textposition=["top left", "middle right", "bottom right"],
+            marker=dict(size=14, color=lifecycle_colors),
+            showlegend=False,
+            customdata=lifecycle_labels,
+            hovertemplate="%{customdata}<br>%{x}<extra></extra>",
+        )
+    )
+    fig_request_timeline.update_layout(
+        height=320,
+        xaxis_title="Time",
+        yaxis=dict(
+            showticklabels=False,
+            showgrid=False,
+            zeroline=False,
+            range=[-0.5, 2.5],
+        ),
+        margin=dict(l=20, r=20, t=20, b=20),
+    )
+    st.plotly_chart(fig_request_timeline, use_container_width=True)
+
+
+# ============================================================================
+# COMPARISON TOOLS
+# ============================================================================
+
+st.header("Comparison Tools")
+
+c1, c2 = st.columns(2)
+with c1:
+    compare_schedulers = st.multiselect("Schedulers", SCHEDULER_OPTIONS, default=SCHEDULER_OPTIONS)
+with c2:
+    compare_allocators = st.multiselect("Allocators", ALLOCATOR_OPTIONS, default=ALLOCATOR_OPTIONS)
+
+if st.button("Run Comparison Across Selected Variants", use_container_width=True):
+    if not compare_schedulers or not compare_allocators:
+        st.warning("Select at least one scheduler and one allocator.")
+    else:
+        compare_rows = []
+        same_seed = int(results.get("seed_used", st.session_state.manual_seed))
+
+        for scheduler in compare_schedulers:
+            for allocator in compare_allocators:
+                compare_engine = SimulationEngine(
+                    scheduler_type=scheduler,
+                    allocator_type=allocator,
+                    staff_config={
+                        "num_staff": int(st.session_state.num_staff),
+                        "quota_limit": int(st.session_state.quota_limit),
+                    },
+                    priority_weights=normalized_weights_from_ui(),
+                    random_seed=same_seed,
+                    work_start=st.session_state.work_start_time.strftime("%H:%M"),
+                    work_end=st.session_state.work_end_time.strftime("%H:%M"),
+                )
+                compare_result = compare_engine.run(
+                    custom_config={
+                        "scenario": "custom",
+                        "total_requests": int(st.session_state.total_requests),
+                        "urgency_base": int(st.session_state.urgency_base),
+                        "imbalance_factor": int(st.session_state.imbalance_factor),
+                        "num_absent_staff": int(st.session_state.num_absent_staff),
+                    }
+                )
+
+                compare_rows.append(
+                    {
+                        "scheduler": scheduler,
+                        "allocator": allocator,
+                        "total_processed": compare_result.get("total_processed", 0),
+                        "avg_waiting_time_hours": compare_result.get("avg_waiting_time_hours", 0.0),
+                        "avg_turnaround_days": compare_result.get("avg_turnaround_days", 0.0),
+                        "total_days_elapsed": compare_result.get("total_days_elapsed", 0.0),
+                        "throughput_req_per_day": compare_result.get("throughput_req_per_day", 0.0),
+                    }
+                )
+
+        compare_df = pd.DataFrame(compare_rows)
+
+        baseline = compare_df[
+            (compare_df["scheduler"] == "FCFS")
+            & (compare_df["allocator"] == "college_based")
+        ]
+
+        if baseline.empty:
+            baseline_row = compare_df.iloc[0]
+        else:
+            baseline_row = baseline.iloc[0]
+
+        compare_df["delta_wait_vs_baseline"] = (
+            compare_df["avg_waiting_time_hours"] - baseline_row["avg_waiting_time_hours"]
+        ).round(2)
+        compare_df["delta_throughput_vs_baseline"] = (
+            compare_df["throughput_req_per_day"] - baseline_row["throughput_req_per_day"]
+        ).round(2)
+        compare_df["delta_turnaround_vs_baseline"] = (
+            compare_df["avg_turnaround_days"] - baseline_row["avg_turnaround_days"]
+        ).round(2)
+
+        st.session_state.comparison_df = compare_df
+
+if st.session_state.comparison_df is not None:
+    st.dataframe(st.session_state.comparison_df, use_container_width=True, hide_index=True)
+
+
+# ============================================================================
+# EXPORT TOOLS
+# ============================================================================
+
+st.header("Export and Reproducibility")
+
+if engine.completed:
+    export_df = pd.DataFrame(
+        [
+            {
+                "request_id": req.request_id,
+                "college": req.college,
+                "document_type": req.document_type,
+                "urgency": req.urgency,
+                "requester_type": req.requester_type,
+                "submission_time": req.submission_time.isoformat(),
+                "assignment_time": req.assignment_time.isoformat() if req.assignment_time else None,
+                "completion_time": req.completion_time.isoformat() if req.completion_time else None,
+                "queue_wait_hours": round(req.get_waiting_time_minutes() / 60.0, 4),
+                "turnaround_days": round(req.get_turnaround_time_minutes() / 1440.0, 4),
+                "assigned_staff": req.assigned_staff,
+            }
+            for req in engine.completed
+        ]
+    )
+
+    csv_data = export_df.to_csv(index=False)
+    st.download_button(
+        "Download Results CSV",
+        data=csv_data,
+        file_name=f"simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+if st.session_state.last_run_config:
+    config_json = {
+        "generated_at": datetime.now().isoformat(),
+        "seed_used": results.get("seed_used"),
+        "scheduler_type": results.get("scheduler_type"),
+        "allocator_type": results.get("allocator_type"),
+        "mode": "custom_sliders",
+        "work_hours": results.get("work_hours"),
+        "priority_weights": results.get("priority_weights"),
+        "run_config": st.session_state.last_run_config.get("run_config", {}),
+        "ui_config": st.session_state.last_run_config.get("ui_config", {}),
+    }
+    st.download_button(
+        "Download Run Config JSON",
+        data=json.dumps(config_json, indent=2),
+        file_name=f"simulation_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+        mime="application/json",
+        use_container_width=True,
+    )

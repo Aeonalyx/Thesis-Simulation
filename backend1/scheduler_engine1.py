@@ -1,1127 +1,964 @@
 """
-STEP 1: scheduler_engine1.py - Core Simulation Engine
-This file contains pure algorithms with NO web code.
-It can be tested standalone in Python without Flask or Streamlit.
+Core simulation engine for registrar scheduling experiments.
+
+Implements:
+- FCFS and Weighted schedulers
+- 4 allocator strategies (college_based, workload_based, pooled, quota_free)
+- Working-hours rollover (default 08:00 to 17:00)
+- Daily quota enforcement (except quota_free)
+- Event log generation for step-by-step frontend playback
+- Deterministic random seed support for reproducibility
 """
 
-# IMPORTS - What we need from Python
-from datetime import datetime, timedelta  # For time calculations
-from dataclasses import dataclass          # For creating organized data containers
-from typing import List, Dict, Optional    # For type hints
-import random                              # For randomness in simulation
+from datetime import datetime, timedelta, date
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+import random
 
 
 # ============================================================================
-# CONFIGURATION - The "Rules" of the System (Define once, reference everywhere)
+# DEFAULT CONFIGURATION
 # ============================================================================
 
-# PRIORITY_WEIGHTS: When calculating priority, how much does each factor matter?
-# Total adds up to 1.0 (100%)
 PRIORITY_WEIGHTS = {
-    'urgency': 0.40,        # 40% - How urgent is this request?
-    'requester_type': 0.25, # 25% - Who's requesting? (graduating student > regular student)
-    'waiting_time': 0.20,   # 20% - How long have they waited? (fairness)
-    'document_type': 0.15   # 15% - How complex is the document?
+    "urgency": 0.40,
+    "requester_type": 0.25,
+    "waiting_time": 0.20,
+    "document_type": 0.15,
 }
 
-# REQUESTER_PRIORITY: Different types of requesters have different importance (1-10 scale)
 REQUESTER_PRIORITY = {
-    'Graduating Student': 10,    # Most urgent (needs to graduate)
-    'Enrolling Student': 8,      # Important (needs to enroll)
-    'Faculty': 7,                # Somewhat important
-    'Alumni': 5,                 # Less urgent
-    'Regular Student': 3         # Can wait longer
+    "Graduating Student": 10,
+    "Enrolling Student": 8,
+    "Faculty": 7,
+    "Alumni": 5,
+    "Regular Student": 3,
 }
 
-# DOCUMENT_COMPLEXITY: Some documents take longer (multiplier on base time in DAYS)
 DOCUMENT_COMPLEXITY = {
-    'Transcript of Records': 3,         # Takes 3 days
-    'Certificate of Enrollment': 2,     # Takes 2 days
-    'Honorable Dismissal': 4,          # Takes 4 days
-    'Certification': 1                  # Takes 1 day
+    "Transcript of Records": 3,
+    "Certificate of Enrollment": 2,
+    "Honorable Dismissal": 4,
+    "Certification": 1,
 }
 
-# COLLEGES: List of all colleges in the system
-COLLEGES = ['COE', 'CAS', 'CBA', 'CEGE', 'CS', 'IE']
+COLLEGES = ["COE", "CAS", "CBA", "CEGE", "CS", "IE"]
 
-# COLLEGE_POPULATION: Realistic student population distribution (percentage)
-# COE and CAS have most students, smaller colleges have fewer
 COLLEGE_POPULATION = {
-    'COE': 0.25,      # 25% - Engineering (largest)
-    'CAS': 0.25,      # 25% - Arts & Sciences
-    'CBA': 0.18,      # 18% - Business
-    'CEGE': 0.15,     # 15% - Education
-    'CS': 0.12,       # 12% - Computer Science
-    'IE': 0.05        # 5% - Institute (smallest)
+    "COE": 0.25,
+    "CAS": 0.25,
+    "CBA": 0.18,
+    "CEGE": 0.15,
+    "CS": 0.12,
+    "IE": 0.05,
 }
 
 
 # ============================================================================
-# STEP 2: DocumentRequest Class
-# Represents ONE student's document request
+# DATA CLASSES
 # ============================================================================
 
 @dataclass
 class DocumentRequest:
-    """
-    Represents a single document request from a student.
-    
-    INITIAL FIELDS (set when request arrives):
-    - request_id: Unique ID like "REQ0001"
-    - college: Which college (COE, CAS, etc)
-    - document_type: Type of document (Transcript, Certificate, etc)
-    - urgency: How urgent (1-10 scale)
-    - requester_type: Type of requester (Graduating Student, Regular, etc)
-    - submission_time: When student submitted the request
-    
-    PROCESSING FIELDS (set as request is processed):
-    - priority_score: Calculated priority (0-1, only used by Weighted Priority scheduler)
-    - assignment_time: When staff member was assigned to it
-    - completion_time: When the request was completed
-    - assigned_staff: Which staff member handled it
-    """
-    
-    # Initial fields (required when creating)
     request_id: str
     college: str
     document_type: str
-    urgency: int              # 1-10 scale
+    urgency: int
     requester_type: str
     submission_time: datetime
-    
-    # Processing fields (set later, start empty)
+
     priority_score: float = 0.0
     assignment_time: Optional[datetime] = None
     completion_time: Optional[datetime] = None
     assigned_staff: Optional[str] = None
-    
-    def calculate_priority(self, current_time: datetime) -> float:
-        """
-        Calculate priority score at a specific point in time.
-        
-        WHY DOES IT TAKE current_time?
-        Priority increases over time as request waits longer (fairness).
-        A new request might have low priority, but after 2 hours, it goes up.
-        
-        HOW DOES IT WORK?
-        1. Normalize each factor to 0-1 scale
-        2. Multiply by its weight from PRIORITY_WEIGHTS
-        3. Sum them up
-        
-        WHEN IS THIS CALLED?
-        - Only by WeightedPriorityScheduler
-        - FCFS scheduler never calls this
-        
-        Returns: Float between 0-1 (higher = more important)
-        """
-        
-        # Factor 1: How urgent is the request itself? (1-10 scale)
+
+    def calculate_priority(
+        self,
+        current_time: datetime,
+        weights: Dict[str, float],
+        workday_minutes: int,
+    ) -> float:
+        """Compute weighted priority score for this request at current_time."""
         urgency_norm = self.urgency / 10.0
-        # Example: urgency=9 → 0.9
-        
-        # Factor 2: What type of requester? (from REQUESTER_PRIORITY)
         requester_norm = REQUESTER_PRIORITY.get(self.requester_type, 3) / 10.0
-        # Example: "Graduating Student"→10/10=1.0, "Regular Student"→3/10=0.3
-        
-        # Factor 3: How long have they been waiting? (increases fairness)
-        waiting_minutes = (current_time - self.submission_time).total_seconds() / 60
-        waiting_norm = min(waiting_minutes / 120.0, 1.0)  # Cap at 120 min
-        # Example: waiting 120 min → 1.0 (high priority for fairness)
-        # Example: waiting 60 min → 0.5
-        
-        # Factor 4: How complex is the document? (inverse - easier docs boost priority)
-        doc_complexity = DOCUMENT_COMPLEXITY.get(self.document_type, 1.0)
-        doc_norm = 1.0 / doc_complexity
-        # Example: Transcript (1.5) → 1/1.5=0.67
-        # Example: Certification (0.8) → 1/0.8=1.25 (simpler, gets boost)
-        
-        # Combine all factors with weights
-        # This weighted sum formula is what makes priority balanced
+
+        waiting_minutes = max(
+            0.0,
+            (current_time - self.submission_time).total_seconds() / 60.0,
+        )
+        waiting_norm = min(waiting_minutes / max(float(workday_minutes * 2), 1.0), 1.0)
+
+        complexity = float(DOCUMENT_COMPLEXITY.get(self.document_type, 1))
+        doc_norm = 1.0 / complexity
+
         self.priority_score = (
-            PRIORITY_WEIGHTS['urgency'] * urgency_norm +
-            PRIORITY_WEIGHTS['requester_type'] * requester_norm +
-            PRIORITY_WEIGHTS['waiting_time'] * waiting_norm +
-            PRIORITY_WEIGHTS['document_type'] * doc_norm
+            weights.get("urgency", 0.0) * urgency_norm
+            + weights.get("requester_type", 0.0) * requester_norm
+            + weights.get("waiting_time", 0.0) * waiting_norm
+            + weights.get("document_type", 0.0) * doc_norm
         )
         return self.priority_score
-    
+
     def get_waiting_time_minutes(self) -> float:
-        """
-        Calculate how long this request waited in queue.
-        
-        FORMULA: waiting_time = assignment_time - submission_time
-        
-        WHY THIS METRIC?
-        For FCFS: Shows if fairness is working (all similar wait times)
-        For Priority: Shows if urgency is helping (urgent waits less)
-        
-        Returns: Minutes spent in queue before being assigned
-        """
-        if self.assignment_time and self.submission_time:
-            return (self.assignment_time - self.submission_time).total_seconds() / 60
-        return 0.0
-    
+        if self.assignment_time is None:
+            return 0.0
+        return (self.assignment_time - self.submission_time).total_seconds() / 60.0
+
     def get_turnaround_time_minutes(self) -> float:
-        """
-        Calculate total time from submission to completion.
-        
-        FORMULA: turnaround_time = completion_time - submission_time
-        
-        WHY THIS METRIC?
-        Shows TOTAL efficiency including both queue time + processing time.
-        
-        Example:
-        - Submitted: 12:00
-        - Assigned: 12:05 (5 min waiting)
-        - Completed: 12:17 (12 min processing)
-        - Turnaround: 17 minutes (5 + 12)
-        
-        Returns: Total minutes from submission to completion
-        """
-        if self.completion_time and self.submission_time:
-            return (self.completion_time - self.submission_time).total_seconds() / 60
-        return 0.0
+        if self.completion_time is None:
+            return 0.0
+        return (self.completion_time - self.submission_time).total_seconds() / 60.0
 
+    def to_dict(self) -> Dict:
+        return {
+            "request_id": self.request_id,
+            "college": self.college,
+            "document_type": self.document_type,
+            "urgency": self.urgency,
+            "requester_type": self.requester_type,
+            "submission_time": self.submission_time.isoformat(),
+            "priority_score": round(self.priority_score, 4),
+            "assignment_time": self.assignment_time.isoformat() if self.assignment_time else None,
+            "completion_time": self.completion_time.isoformat() if self.completion_time else None,
+            "assigned_staff": self.assigned_staff,
+        }
 
-# ============================================================================
-# STEP 3: StaffMember Class
-# Represents ONE registrar staff member
-# ============================================================================
 
 @dataclass
 class StaffMember:
-    """
-    Represents a single staff member at the registrar office.
-    
-    IDENTITY FIELDS (fixed):
-    - staff_id: Unique ID like "STAFF001"
-    - name: Name of staff member
-    - college_affiliation: Which college they primarily serve (COE, CAS, etc)
-    
-    AVAILABILITY FIELDS (changes during simulation):
-    - next_available_time: When will this staff member be free?
-    - is_available: Are they working today? (False if absent)
-    - total_assigned: How many requests have they processed?
-    - quota_limit: Max requests per day (default 20, configurable)
-    """
-    
-    # Identity fields (fixed)
     staff_id: str
     name: str
     college_affiliation: str
-    
-    # Availability fields (change during simulation)
-    next_available_time: datetime = None
+    quota_limit: int = 20
+
     is_available: bool = True
     total_assigned: int = 0
-    quota_limit: int = 20  # Max requests per day (configurable, default 20)
-    
-    def __post_init__(self):
-        """
-        WHY THIS METHOD?
-        Runs automatically AFTER __init__ to set default values.
-        
-        If next_available_time wasn't provided, set it to now
-        (staff can start working immediately at simulation start)
-        """
-        if self.next_available_time is None:
-            self.next_available_time = datetime.now()
-    
-    def can_accept(self, current_time: datetime) -> bool:
-        """
-        Can this staff member accept a new request RIGHT NOW?
-        
-        Returns True ONLY if:
-        1. They are available (is_available = True)
-           - FALSE if they called in sick (staff_absence scenario)
-        2. Current time >= their next_available_time
-           - FALSE if they're still busy with previous request
-        
-        USAGE:
-        This is called by allocators to see if a staff member
-        can handle the next request in the queue.
-        
-        Example:
-        - Staff is processing until 12:30
-        - next_available_time = 12:30
-        - At 12:25: can_accept() returns False (still busy)
-        - At 12:30: can_accept() returns True (free now!)
-        - At 12:35: can_accept() returns True (still free)
-        """
-        return self.is_available and current_time >= self.next_available_time
-    
-    def assign_request(self, assignment_time: datetime, processing_time: timedelta):
-        """
-        Called when assigning a request to this staff member.
-        
-        Updates:
-        1. total_assigned: Increment workload counter
-        2. next_available_time: Mark them as busy until this time
-        
-        EXAMPLE:
-        - Current time: 12:00 (request being assigned now)
-        - Document type: "Transcript" (complexity 1.5)
-        - Base processing time: 3 minutes
-        - Actual processing time: 1.5 * 3 = 4.5 minutes (with randomness: ±20%)
-        
-        So we call: assign_request(assignment_time=12:00, processing_time=4.5 min)
-        
-        Result:
-        - total_assigned increases by 1 (they've handled 1 more request)
-        - next_available_time becomes 12:04:30 (they'll be free then)
-        
-        WHY THIS MATTERS?
-        When next request comes, allocator checks can_accept()
-        If next_available_time hasn't passed, staff can't take it yet
-        This prevents double-booking and models realistic processing
-        """
-        self.total_assigned += 1
-        self.next_available_time = assignment_time + processing_time
-    
-    def can_accept_quota(self) -> bool:
-        """
-        Check if this staff member is under their daily quota.
-        
-        RETURNS: True if they can accept more work today, False if quota reached
-        
-        WHY SEPARATE METHOD?
-        - can_accept() checks: "Are you free RIGHT NOW?"
-        - can_accept_quota() checks: "Have you hit your daily limit?"
-        
-        These are TWO DIFFERENT CONSTRAINTS:
-        1. Time-based: When are you free? (can_accept)
-        2. Quota-based: Have you done enough today? (can_accept_quota)
-        
-        USED BY: Allocators (CollegeBasedAllocator, WorkloadBasedAllocator, PooledAllocator)
-        SKIPPED BY: QuotaFreeAllocator (no quota limit)
-        
-        EXAMPLE:
-        - Staff has quota_limit = 20
-        - After 20 requests: can_accept_quota() returns False
-        - Additional requests wait or transfer to other staff
-        """
-        return self.total_assigned < self.quota_limit
+    next_available_time: Optional[datetime] = None
+    daily_assigned: Dict[str, int] = field(default_factory=dict)
+
+    def reset_for_run(self, day_start: datetime):
+        self.total_assigned = 0
+        self.next_available_time = day_start
+        self.daily_assigned = {}
+
+    def assignments_on_day(self, day: date) -> int:
+        return self.daily_assigned.get(day.isoformat(), 0)
+
+    def increment_day_quota(self, day: date):
+        key = day.isoformat()
+        self.daily_assigned[key] = self.daily_assigned.get(key, 0) + 1
 
 
 # ============================================================================
-# STEP 4: FCFSScheduler Class
-# First-Come-First-Served: Process requests in arrival order
+# SCHEDULERS (kept for structural clarity)
 # ============================================================================
 
 class FCFSScheduler:
-    """
-    FCFS Scheduler - Processes requests in the order they arrived.
-    
-    PHILOSOPHY:
-    "First person to arrive gets served first, second person second, etc."
-    Like a line at the bank: you wait your turn, oldest customer first.
-    
-    PROS:
-    - Simple to understand and implement
-    - Fair: everyone gets served in order
-    - Predictable: people know when their turn is coming
-    
-    CONS:
-    - Doesn't account for urgency
-    - Graduating student waits same as regular student
-    - Urgent requests don't jump the line
-    
-    METRIC IMPACT:
-    - Avg Waiting Time: Shows if system is responsive (is anyone waiting forever?)
-    - Fairness: All customers wait similar times (no one gets priority)
-    """
-    
     def __init__(self):
-        """Initialize with empty queue"""
         self.queue: List[DocumentRequest] = []
-    
+
     def add_request(self, request: DocumentRequest):
-        """
-        Add a new request to the queue.
-        
-        CALLED BY: SimulationEngine when a new request arrives
-        
-        EXAMPLE:
-        - REQ0001 arrives → add_request(REQ0001)
-        - REQ0002 arrives → add_request(REQ0002)
-        Later, when we process: REQ0001 goes first (was oldest)
-        """
         self.queue.append(request)
-    
+
     def get_all_sorted(self) -> List[DocumentRequest]:
-        """
-        Return all requests sorted by submission_time (oldest first).
-        
-        RETURNS:
-        List of DocumentRequest objects sorted by:
-        - submission_time: ascending (oldest first)
-        
-        CLEARS THE QUEUE:
-        After returning, empties the queue to avoid duplicates
-        
-        EXAMPLE:
-        Queue contains:
-        - REQ0001: submitted 12:00
-        - REQ0003: submitted 12:05
-        - REQ0002: submitted 12:02
-        
-        Returns: [REQ0001, REQ0002, REQ0003] (in time order)
-        Queue becomes: [] (empty)
-        
-        WHY SORT BY SUBMISSION_TIME?
-        That's how FCFS works - whoever submitted first gets scheduled first.
-        This is the ONE criterion FCFS cares about.
-        
-        CONTRAST WITH WeightedPriority:
-        - Weighted Priority would sort by priority_score (calculated from multiple factors)
-        - Weighted Priority considers urgency, requester type, waiting time, doc complexity
-        - FCFS: Only looks at submission_time, nothing else
-        """
         sorted_queue = sorted(self.queue, key=lambda r: r.submission_time)
         self.queue.clear()
         return sorted_queue
 
 
-# ============================================================================
-# STEP 5: The 4 Allocators (Assignment Strategies)
-# These decide: "Which staff member should handle this request?"
-# ============================================================================
+class WeightedPriorityScheduler:
+    def __init__(self):
+        self.pending: List[DocumentRequest] = []
 
-class BaseAllocator:
-    """
-    Base class that all allocators inherit from.
-    
-    WHY A BASE CLASS?
-    - Defines the interface all allocators must follow
-    - All must have assign(request, current_time) method
-    - Ensures they all work the same way when called by SimulationEngine
-    
-    PATTERN: Strategy Pattern
-    - Different allocator subclasses = different strategies
-    - All can be swapped in/out without changing SimulationEngine code
-    """
-    
-    def __init__(self, staff_pool: List[StaffMember]):
-        """
-        Initialize allocator with the staff pool.
-        
-        ARG: staff_pool - List of all available staff members
-        All allocators need to know about staff to make assignments
-        """
-        self.staff_pool = staff_pool
-    
-    def assign(self, request: DocumentRequest, current_time: datetime) -> Optional[StaffMember]:
-        """
-        Find and return a staff member to handle this request.
-        
-        RETURNS:
-        - StaffMember object if someone is available
-        - None if nobody is available right now
-        
-        This is called by SimulationEngine for EACH request
-        """
-        raise NotImplementedError
+    def add_request(self, request: DocumentRequest):
+        self.pending.append(request)
+
+    def remove_request(self, request: DocumentRequest):
+        self.pending.remove(request)
+
+    def rank(
+        self,
+        current_time: datetime,
+        weights: Dict[str, float],
+        workday_minutes: int,
+    ) -> List[DocumentRequest]:
+        for req in self.pending:
+            req.calculate_priority(current_time, weights, workday_minutes)
+        return sorted(self.pending, key=lambda r: (-r.priority_score, r.submission_time))
 
 
 # ============================================================================
-# ALLOCATOR 1: CollegeBasedAllocator
-# Strategy: Assign to staff from the SAME COLLEGE (if available)
-# ============================================================================
-
-class CollegeBasedAllocator(BaseAllocator):
-    """
-    STRATEGY: Prefer staff from the same college as the request.
-    
-    LOGIC:
-    1. Find all staff from the request's college who are available
-    2. Pick one randomly from candidates
-    3. If no same-college staff available, return None
-    
-    PROS:
-    - Staff know their college's procedures and students
-    - College-specific expertise is preserved
-    - Requests stay within department
-    
-    CONS:
-    - If COE is busy but CAS is idle, COE request waits
-    - Long queues for popular colleges
-    - Can't balance workload across departments
-    
-    BEST FOR:
-    - Specialized work per college
-    - Maintaining college-specific procedures
-    - When cross-college help isn't possible
-    """
-    
-    def assign(self, request: DocumentRequest, current_time: datetime) -> Optional[StaffMember]:
-        """
-        Find an available staff member from the same college.
-        
-        CONSTRAINTS CHECKED:
-        1. Same college: s.college_affiliation == request.college
-        2. Available now: s.can_accept(current_time)
-        3. Under quota: s.can_accept_quota() - NOT over the 20 limit
-        
-        SELECTION: random.choice() if multiple candidates
-        
-        BEHAVIOR WHEN STAFF HITS QUOTA (20 requests/day):
-        - NO FALLBACK: Returns None if all same-college staff at quota
-        - Customer WAITS IN QUEUE until staff finishes one request
-        - As staff processes and total_assigned decreases... WAIT, no
-        - total_assigned INCREASES, not decreases
-        
-        ACTUALLY:
-        - When staff hits quota limit, can_accept_quota() = False
-        - New requests for this college CANNOT be assigned to this staff
-        - They stay in queue
-        - Other same-college staff might be available (under quota)
-        - If ALL same-college staff are at quota, everyone waits
-        
-        This is STRICT COLLEGE-BASED with QUOTA ENFORCEMENT
-        """
-        candidates = [
-            s for s in self.staff_pool 
-            if s.college_affiliation == request.college 
-            and s.can_accept(current_time)
-            and s.can_accept_quota()  # NEW: Must not be over quota
-        ]
-        return random.choice(candidates) if candidates else None
-
-
-# ============================================================================
-# ALLOCATOR 2: WorkloadBasedAllocator
-# Strategy: Prefer same college, but flexible - balance workload
-# ============================================================================
-
-class WorkloadBasedAllocator(BaseAllocator):
-    """
-    STRATEGY: Balance workload across staff.
-    
-    TWO-TIER LOGIC:
-    1. FIRST CHOICE: Find least-busy staff from same college
-    2. FALLBACK: If no same-college staff, find least-busy from ANYONE
-    
-    PROS:
-    - Balances workload (no one gets overloaded)
-    - Respects college specialization when possible
-    - Flexible fallback when needed
-    - More realistic for cross-college help
-    
-    CONS:
-    - Slightly more complex logic
-    - Might separate students from their college staff
-    
-    BEST FOR:
-    - General registrar operations
-    - Balancing team workload
-    - When flexibility matters
-    
-    METRIC RESULT:
-    - More balanced staff_load (everyone does ~same requests)
-    - More consistent avg_waiting_time
-    """
-    
-    def assign(self, request: DocumentRequest, current_time: datetime) -> Optional[StaffMember]:
-        """
-        Two-tier assignment with QUOTA ENFORCEMENT and FLEXIBLE FALLBACK.
-        
-        TIER 1: Find available, under-quota staff from same college
-        - FILTER: Same college AND available AND under quota (20 limit)
-        - SELECTION: min() by total_assigned (least busy)
-        - RETURN if found
-        
-        TIER 2: If Tier 1 fails, try ANYONE from any college (still quota-checked)
-        - FILTER: Available AND under quota (doesn't matter college)
-        - SELECTION: min() by total_assigned (least busy)
-        - RETURN if found
-        
-        BEHAVIOR:
-        - Respects college affiliation preference (tries Tier 1 first)
-        - But when staff hit quota, TRANSFERS to less-busy staff from other colleges
-        - Balances workload while respecting quotas
-        - Customers can get served faster (don't wait in queue)
-        
-        BUSINESS LOGIC:
-        "We prefer college specialists, but if they're overloaded, we'll use anyone available"
-        """
-        
-        # TIER 1: Same-college, under-quota staff
-        college_staff = [
-            s for s in self.staff_pool 
-            if s.college_affiliation == request.college 
-            and s.can_accept(current_time)
-            and s.can_accept_quota()  # NEW: Check quota
-        ]
-        
-        if college_staff:
-            return min(college_staff, key=lambda s: s.total_assigned)
-        
-        # TIER 2: ANY college, under-quota staff (flexible fallback)
-        available = [
-            s for s in self.staff_pool 
-            if s.can_accept(current_time)
-            and s.can_accept_quota()  # NEW: Check quota
-        ]
-        
-        if available:
-            return min(available, key=lambda s: s.total_assigned)
-        
-        # TIER 3: Nobody available and under quota
-        return None
-
-
-# ============================================================================
-# ALLOCATOR 3: PooledAllocator
-# Strategy: Pool all staff together - assign to whoever's free soonest
-# ============================================================================
-
-class PooledAllocator(BaseAllocator):
-    """
-    STRATEGY: No college boundaries. Pool all staff and assign to
-    whoever becomes available SOONEST.
-    
-    LOGIC:
-    1. Find all available staff (from ANY college)
-    2. Pick the one with earliest next_available_time
-    
-    PROS:
-    - Minimizes wait time (requests get processed ASAP)
-    - No college bottlenecks
-    - Simplest to implement
-    - Most efficient throughput
-    
-    CONS:
-    - Loses college specialization
-    - Students served by random college staff
-    
-    BEST FOR:
-    - Maximizing throughput
-    - Minimizing wait times
-    - When all staff are interchangeable
-    - General registrar operations
-    
-    METRIC RESULT:
-    - Lowest avg_waiting_time (nobody waits long)
-    - Highest throughput (processes most requests)
-    """
-    
-    def assign(self, request: DocumentRequest, current_time: datetime) -> Optional[StaffMember]:
-        """
-        Find available, under-quota staff and picking whoever becomes free soonest.
-        
-        CONSTRAINTS:
-        1. Must be available now: can_accept(current_time)
-        2. Must be under quota: can_accept_quota() - NOT over 20 limit
-        3. Selection: Pick whoever has earliest next_available_time
-        
-        BEHAVIOR:
-        - No college boundaries (don't care about college_affiliation)
-        - Pure efficiency and workload balancing
-        - Quota prevents burnout across entire team
-        - When anyone hits quota, system can't process more (everyone waits)
-        
-        WHY "EARLIEST next_available_time"?
-        - If multiple staff available now, some will become busy soon
-        - Pick truly-available staff (lowest next_available_time)
-        - Leaves other staff free for next requests
-        - Optimizes queue flow
-        """
-        available = [
-            s for s in self.staff_pool 
-            if s.can_accept(current_time)
-            and s.can_accept_quota()  # NEW: Check quota
-        ]
-        
-        if available:
-            return min(available, key=lambda s: s.next_available_time)
-        
-        return None
-
-
-# ============================================================================
-# ALLOCATOR 4: QuotaFreeAllocator
-# Strategy: Same as Pooled (no quotas/boundaries)
-# ============================================================================
-
-class QuotaFreeAllocator(BaseAllocator):
-    """
-    STRATEGY: College-specialist WITHOUT quota limits.
-    
-    LOGIC:
-    - Prefer staff from same college (specialist approach)
-    - NO quota enforcement (unlimited daily capacity)
-    - Pick least busy (by next_available_time)
-    
-    PROS:
-    - Maintains college specialization
-    - Unlimited flexibility (can handle surge)
-    - Useful for testing or flexible staff
-    
-    CONTRAST:
-    - PooledAllocator = no college boundaries, HAS quota
-    - QuotaFreeAllocator = college boundaries, NO quota
-    
-    USE CASE:
-    "What if certain staff can work unlimited hours?"
-    Or: "What if we removed daily limits for high-priority staff?"
-    """
-    
-    def assign(self, request: DocumentRequest, current_time: datetime) -> Optional[StaffMember]:
-        """
-        Find available college-specialist staff with NO quota limit.
-        
-        LOGIC:
-        - Same college: s.college_affiliation == request.college
-        - Available now: s.can_accept(current_time)
-        - NO quota check - unlimited capacity
-        - Selection: Least busy (by next_available_time)
-        """
-        candidates = [
-            s for s in self.staff_pool 
-            if s.college_affiliation == request.college 
-            and s.can_accept(current_time)
-            # NO quota check - absolutely UNLIMITED
-        ]
-        
-        if candidates:
-            # Pick least busy (whoever has earliest next_available_time)
-            return min(candidates, key=lambda s: s.next_available_time)
-        
-        return None
-
-
-# ============================================================================
-# STEP 6: SimulationEngine - The Main Orchestrator
-# Ties everything together: staff, scheduler, allocator, requests
+# SIMULATION ENGINE
 # ============================================================================
 
 class SimulationEngine:
-    """
-    MAIN SIMULATION ENGINE - Coordinates the entire simulation.
-    
-    RESPONSIBILITIES:
-    1. Create staff pool (with configurable size and quota)
-    2. Create scheduler (FCFS or Weighted Priority)
-    3. Create allocator (College-Based, Workload-Based, Pooled, Quota-Free)
-    4. Generate synthetic requests (with scenario variations)
-    5. Run the main loop: sort → assign → process → calculate metrics
-    6. Track queue and metrics for evaluation
-    
-    FLOW:
-    engine = SimulationEngine(scheduler_type, allocator_type, staff_config)
-    results = engine.run(scenario, duration_min)
-    """
-    
     def __init__(
-        self, 
-        scheduler_type: str, 
-        allocator_type: str, 
-        staff_config: Optional[Dict] = None
+        self,
+        scheduler_type: str,
+        allocator_type: str,
+        staff_config: Optional[Dict] = None,
+        priority_weights: Optional[Dict[str, float]] = None,
+        random_seed: Optional[int] = None,
+        work_start: str = "08:00",
+        work_end: str = "17:00",
     ):
-        """
-        Initialize the simulation engine.
-        
-        ARGS:
-        - scheduler_type: "FCFS" or "WEIGHTED"
-        - allocator_type: "college_based", "workload_based", "pooled", "quota_free"
-        - staff_config: Dict with optional customizations
-            - "enable_custom_staff": bool
-            - "num_staff": int (default 6)
-            - "quota_limit": int (default 20, per staff per day)
-        
-        EXAMPLE:
-        engine = SimulationEngine(
-            scheduler_type="FCFS",
-            allocator_type="college_based",
-            staff_config={
-                "enable_custom_staff": True,
-                "num_staff": 8,
-                "quota_limit": 25
-            }
-        )
-        """
-        
-        # STEP 1: Parse staff configuration
-        num_staff = 6  # Default
-        quota_limit = 20  # Default
-        
-        if staff_config:
-            if staff_config.get('enable_custom_staff'):
-                num_staff = staff_config.get('num_staff', 6)
-            if 'quota_limit' in staff_config:
-                quota_limit = staff_config.get('quota_limit', 20)
-        
-        # STEP 2: Create staff pool with configured quota
-        self.staff_pool = self._generate_staff_pool(num_staff, quota_limit)
-        print(f"✅ Staff pool created: {num_staff} members (quota: {quota_limit}/day)")
-        
-        # STEP 3: Set scheduler type
-        self.scheduler_type = scheduler_type.upper()
-        print(f"✅ Scheduler: {self.scheduler_type}")
-        
-        # STEP 4: Create allocator
-        self.allocator = self._create_allocator(allocator_type)
-        print(f"✅ Allocator: {allocator_type}")
-        
-        # STEP 5: Initialize tracking variables
-        self.scheduler = FCFSScheduler()  # Will use this to queue requests
-        self.completed: List[DocumentRequest] = []
-        self.waiting_queue: List[DocumentRequest] = []  # For visualization
-        self.in_progress: List[DocumentRequest] = []     # Currently being processed
-        self.start_time = datetime.now()
-        self.scenario = "baseline"
-    
-    def _init_all_staff(self) -> List[StaffMember]:
-        """
-        Create ALL possible staff members (one per college).
-        Used to calculate absent staff.
-        """
-        staff = []
-        names = [
-            "Maria Santos", "Juan Dela Cruz", "Ana Reyes", "Carlos Lim",
-            "Luisa Gomez", "Ramon Aquino", "Elena Cruz", "Miguel Torres"
-        ]
-        
-        for i, college in enumerate(COLLEGES):
-            staff.append(StaffMember(
-                staff_id=f"STAFF{i+1:03d}",
-                name=names[i % len(names)],
-                college_affiliation=college,
-                quota_limit=20
-            ))
-        return staff
-    
-    def _generate_staff_pool(self, num_staff: int, quota_limit: int) -> List[StaffMember]:
-        """
-        Create synthetic staff members.
-        
-        ARGS:
-        - num_staff: How many staff to create (1-6, one per college)
-        - quota_limit: Daily quota per staff member
-        
-        CREATES:
-        - Names from predefined list
-        - College affiliations from COLLEGES list (first num_staff colleges)
-        - Quota limit for each
-        """
-        staff = []
-        names = [
-            "Maria Santos", "Juan Dela Cruz", "Ana Reyes", "Carlos Lim",
-            "Luisa Gomez", "Ramon Aquino", "Elena Cruz", "Miguel Torres"
-        ]
-        
-        for i in range(min(num_staff, len(COLLEGES))):
-            staff.append(StaffMember(
-                staff_id=f"STAFF{i+1:03d}",
-                name=names[i % len(names)],
-                college_affiliation=COLLEGES[i],  # Assign to each college in order
-                quota_limit=quota_limit  # Set quota for this staff
-            ))
-        return staff
-    
-    def _create_allocator(self, allocator_type: str) -> BaseAllocator:
-        """
-        Create the appropriate allocator based on type string.
-        
-        MAPPING:
-        - "college_based" → CollegeBasedAllocator
-        - "workload_based" → WorkloadBasedAllocator
-        - "pooled" → PooledAllocator
-        - "quota_free" → QuotaFreeAllocator
-        
-        DEFAULT: CollegeBasedAllocator if unknown type
-        """
-        allocators = {
-            "college_based": CollegeBasedAllocator(self.staff_pool),
-            "workload_based": WorkloadBasedAllocator(self.staff_pool),
-            "pooled": PooledAllocator(self.staff_pool),
-            "quota_free": QuotaFreeAllocator(self.staff_pool)
-        }
-        return allocators.get(allocator_type, CollegeBasedAllocator(self.staff_pool))
-    
-    def _generate_requests(self, custom_config: Dict = None) -> List[DocumentRequest]:
-        """
-        Generate synthetic requests using SLIDER-BASED configuration.
-        Fixed scenarios removed. Everything is now dynamically controlled.
-        """
-        config = custom_config or {}
-        requests = []
-        
-        # 1. Extract slider values (with safe defaults)
-        total_requests = config.get('total_requests', 200)
-        urgency_base = config.get('urgency_base', 5)
-        imbalance_factor = config.get('imbalance_factor', 0) / 100.0  # 0.0 to 1.0
-        
-        # 2. College distribution with dynamic imbalance
-        college_list = list(COLLEGE_POPULATION.keys())
-        college_weights = list(COLLEGE_POPULATION.values())
-        
-        if imbalance_factor > 0:
-            # Boost COE weight proportionally, then renormalize
-            coe_idx = college_list.index('COE')
-            college_weights[coe_idx] += imbalance_factor * 0.3
-            total_w = sum(college_weights)
-            college_weights = [w / total_w for w in college_weights]
-            
-        # 3. Dynamic urgency range based on slider base (1-10)
-        if urgency_base >= 8:
-            urgency_range = list(range(urgency_base, 11))      # High only
-        elif urgency_base <= 3:
-            urgency_range = list(range(1, urgency_base + 2))   # Low only
-        else:
-            urgency_range = list(range(max(1, urgency_base-2), min(10, urgency_base+3)))
-            
-        doc_types = list(DOCUMENT_COMPLEXITY.keys())
-        requester_types = list(REQUESTER_PRIORITY.keys())
-        
-        # 4. Time distribution (60% morning, 20% afternoon, 20% evening)
-        morning_count = int(total_requests * 0.6)
-        afternoon_count = int(total_requests * 0.2)
-        evening_count = total_requests - morning_count - afternoon_count
-        
-        current_request_id = 0
-        
-        # Helper to avoid code duplication
-        def _add_requests(count: int, start_hour: float, end_hour: float):
-            nonlocal current_request_id
-            for _ in range(count):
-                hours_in_day = random.uniform(start_hour, end_hour)
-                submission_time = self.start_time + timedelta(hours=hours_in_day)
-                college = random.choices(college_list, weights=college_weights, k=1)[0]
-                requests.append(DocumentRequest(
-                    request_id=f"REQ{current_request_id:04d}",
-                    college=college,
-                    document_type=random.choice(doc_types),
-                    urgency=random.choice(urgency_range),
-                    requester_type=random.choice(requester_types),
-                    submission_time=submission_time
-                ))
-                current_request_id += 1
-                
-        _add_requests(morning_count, 8, 10)
-        _add_requests(afternoon_count, 14, 16)
-        _add_requests(evening_count, 16, 24)
-        
-        return requests
-    
-    def _approximate_real_days(self) -> str:
-        """
-        Convert scenario to approximate real-world context.
-        
-        Since simulation uses realistic day-based durations,
-        this just shows what the scenario represents.
-        """
-        scenario_requests = {
-            "baseline": 200,
-            "peak_urgency": 280,
-            "workload_imbalance": 240
-        }.get(self.scenario, 200)
-        
-        return f"({scenario_requests} requests arriving in one day)"
-    
-    def run(self, custom_config: Dict = None) -> Dict:
+        self.scheduler_type = (scheduler_type or "FCFS").upper().strip()
+        self.allocator_type = (allocator_type or "college_based").strip().lower()
 
-        self.scenario = "custom"
-        """
-        MATHEMATICAL SIMULATION - Calculate outcomes instantly, no time-based simulation.
-        
-        Instead of simulating actual passage of time (slow with large timedeltas),
-        we calculate:
-        1. Staff capacity (avg processing time per request)
-        2. Queue wait times (based on arrival pattern + capacity)
-        3. Total completion time (all requests / capacity per day)
-        
-        This runs in milliseconds, not minutes!
-        """
-        
-        print(f"\n{'='*70}")
-        print(f"🎬 STARTING SIMULATION: {custom_config}")
-        print(f"   Staff available: {len(self.staff_pool)}/{len(COLLEGES)}")
-        real_equiv = self._approximate_real_days()
-        print(f"   Day 0: {real_equiv}")
-        print(f"{'='*70}")
-        
-        # Reset for fresh simulation
+        self.priority_weights = self._normalize_weights(priority_weights or PRIORITY_WEIGHTS)
+
+        self.work_start_minutes = self._parse_clock_minutes(work_start, 8 * 60)
+        self.work_end_minutes = self._parse_clock_minutes(work_end, 17 * 60)
+        if self.work_end_minutes <= self.work_start_minutes:
+            self.work_start_minutes = 8 * 60
+            self.work_end_minutes = 17 * 60
+        self.workday_minutes = self.work_end_minutes - self.work_start_minutes
+
+        if random_seed is None:
+            random_seed = random.SystemRandom().randint(1, 10**9)
+        self.random_seed = int(random_seed)
+        self.rng = random.Random(self.random_seed)
+
+        self.staff_config = staff_config or {}
+        self.staff_pool = self._generate_staff_pool(
+            num_staff=self.staff_config.get("num_staff", 6),
+            quota_limit=self.staff_config.get("quota_limit", 20),
+        )
+
+        self.scheduler = FCFSScheduler() if self.scheduler_type == "FCFS" else WeightedPriorityScheduler()
+
+        self.start_time = self._default_day_start(datetime.now())
+        self.scenario = "baseline"
+        self.completed: List[DocumentRequest] = []
+        self.waiting_queue: List[DocumentRequest] = []
+        self.generated_requests: List[DocumentRequest] = []
+
+        self.event_log: List[Dict] = []
+        self._event_seq = 0
+        self.absent_staff_ids: List[str] = []
+
+    # ---------------------------------------------------------------------
+    # Time helpers
+    # ---------------------------------------------------------------------
+
+    def _parse_clock_minutes(self, raw_value: str, fallback_minutes: int) -> int:
+        if not isinstance(raw_value, str) or ":" not in raw_value:
+            return fallback_minutes
+        try:
+            hour_text, minute_text = raw_value.strip().split(":", 1)
+            hour = int(hour_text)
+            minute = int(minute_text)
+            if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+                return fallback_minutes
+            return hour * 60 + minute
+        except Exception:
+            return fallback_minutes
+
+    def _clock_string(self, total_minutes: int) -> str:
+        hour = total_minutes // 60
+        minute = total_minutes % 60
+        return f"{hour:02d}:{minute:02d}"
+
+    def _default_day_start(self, dt: datetime) -> datetime:
+        return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def _day_start(self, day: date) -> datetime:
+        h = self.work_start_minutes // 60
+        m = self.work_start_minutes % 60
+        return datetime.combine(day, datetime.min.time()).replace(hour=h, minute=m)
+
+    def _day_end(self, day: date) -> datetime:
+        h = self.work_end_minutes // 60
+        m = self.work_end_minutes % 60
+        return datetime.combine(day, datetime.min.time()).replace(hour=h, minute=m)
+
+    def _next_working_start(self, dt: datetime) -> datetime:
+        day_start = self._day_start(dt.date())
+        day_end = self._day_end(dt.date())
+        if dt < day_start:
+            return day_start
+        if dt >= day_end:
+            return self._day_start(dt.date() + timedelta(days=1))
+        return dt
+
+    def _add_processing_with_work_hours(self, start_dt: datetime, duration: timedelta) -> datetime:
+        remaining_seconds = max(duration.total_seconds(), 0.0)
+        current = self._next_working_start(start_dt)
+
+        while remaining_seconds > 0:
+            day_end = self._day_end(current.date())
+            available_seconds = max((day_end - current).total_seconds(), 0.0)
+
+            if available_seconds <= 0:
+                current = self._day_start(current.date() + timedelta(days=1))
+                continue
+
+            chunk = min(available_seconds, remaining_seconds)
+            current = current + timedelta(seconds=chunk)
+            remaining_seconds -= chunk
+
+            if remaining_seconds > 0:
+                current = self._day_start(current.date() + timedelta(days=1))
+
+        return current
+
+    # ---------------------------------------------------------------------
+    # Core setup helpers
+    # ---------------------------------------------------------------------
+
+    def _normalize_weights(self, weights: Dict[str, float]) -> Dict[str, float]:
+        keys = ["urgency", "requester_type", "waiting_time", "document_type"]
+        clean: Dict[str, float] = {}
+        for key in keys:
+            raw = float(weights.get(key, 0.0))
+            clean[key] = max(raw, 0.0)
+        total = sum(clean.values())
+        if total <= 0:
+            return PRIORITY_WEIGHTS.copy()
+        return {k: v / total for k, v in clean.items()}
+
+    def _generate_staff_pool(self, num_staff: int, quota_limit: int) -> List[StaffMember]:
+        names = [
+            "Maria Santos",
+            "Juan Dela Cruz",
+            "Ana Reyes",
+            "Carlos Lim",
+            "Luisa Gomez",
+            "Ramon Aquino",
+            "Elena Cruz",
+            "Miguel Torres",
+        ]
+
+        count = max(1, min(int(num_staff), len(COLLEGES)))
+        quota = max(1, int(quota_limit))
+
+        pool = []
+        for index in range(count):
+            pool.append(
+                StaffMember(
+                    staff_id=f"STAFF{index + 1:03d}",
+                    name=names[index % len(names)],
+                    college_affiliation=COLLEGES[index],
+                    quota_limit=quota,
+                )
+            )
+        return pool
+
+    def _reset_for_run(self):
         self.completed = []
         self.waiting_queue = []
-        
-        # Track which colleges are missing staff
-        staffed_colleges = set(s.college_affiliation for s in self.staff_pool)
-        missing_colleges = set(COLLEGES) - staffed_colleges
-        
-        # STEP 1: Generate all requests for this day
-        print(f"\n📋 Step 1: Generating requests...")
-        requests = self._generate_requests(custom_config)
-        print(f"   Total requests arriving: {len(requests)}")
-        
-        # STEP 2: FCFS requires no priority calculation
-        print(f"\n📊 Step 2: Priority calculation skipped (FCFS)")
-        
-        # STEP 3: Sort requests by scheduler
-        print(f"\n🔄 Step 3: Sorting requests...")
-        if self.scheduler_type == "FCFS":
-            sorted_requests = sorted(requests, key=lambda r: r.submission_time)
-            print(f"   Order: By submission time (oldest first)")
+        self.generated_requests = []
+        self.event_log = []
+        self._event_seq = 0
+        self.absent_staff_ids = []
+
+        workday_start = self._day_start(self.start_time.date())
+        for staff in self.staff_pool:
+            staff.is_available = True
+            staff.reset_for_run(workday_start)
+
+    def _scenario_defaults(self, scenario: str) -> Dict:
+        defaults = {
+            "baseline": {
+                "total_requests": 200,
+                "urgency_base": 5,
+                "imbalance_factor": 0,
+                "num_absent_staff": 0,
+            },
+            "peak_urgency": {
+                "total_requests": 260,
+                "urgency_base": 8,
+                "imbalance_factor": 10,
+                "num_absent_staff": 0,
+            },
+            "workload_imbalance": {
+                "total_requests": 220,
+                "urgency_base": 5,
+                "imbalance_factor": 70,
+                "num_absent_staff": 0,
+            },
+            "staff_absence": {
+                "total_requests": 200,
+                "urgency_base": 5,
+                "imbalance_factor": 10,
+                "num_absent_staff": 1,
+            },
+        }
+        return defaults.get(scenario, defaults["baseline"]).copy()
+
+    def _build_run_config(self, custom_config: Optional[Dict]) -> Dict:
+        incoming = custom_config.copy() if isinstance(custom_config, dict) else {}
+        scenario = str(incoming.get("scenario", "baseline"))
+        defaults = self._scenario_defaults(scenario)
+
+        merged = defaults
+        merged.update(incoming)
+
+        merged["total_requests"] = max(1, int(merged.get("total_requests", 200)))
+        merged["urgency_base"] = max(1, min(10, int(merged.get("urgency_base", 5))))
+        merged["imbalance_factor"] = max(0, min(100, int(merged.get("imbalance_factor", 0))))
+        merged["num_absent_staff"] = max(0, int(merged.get("num_absent_staff", 0)))
+        merged["scenario"] = scenario
+        return merged
+
+    def _apply_staff_absence(self, num_absent_staff: int):
+        if num_absent_staff <= 0:
+            return
+
+        available_staff = [s for s in self.staff_pool if s.is_available]
+        if not available_staff:
+            return
+
+        absence_count = min(num_absent_staff, len(available_staff))
+        absent_staff = self.rng.sample(available_staff, k=absence_count)
+
+        for staff in absent_staff:
+            staff.is_available = False
+            self.absent_staff_ids.append(staff.staff_id)
+
+    def _generate_requests(self, config: Dict) -> List[DocumentRequest]:
+        total_requests = int(config["total_requests"])
+        urgency_base = int(config["urgency_base"])
+        imbalance_ratio = float(config["imbalance_factor"]) / 100.0
+
+        colleges = list(COLLEGE_POPULATION.keys())
+        weights = list(COLLEGE_POPULATION.values())
+
+        if imbalance_ratio > 0:
+            coe_index = colleges.index("COE")
+            weights[coe_index] += imbalance_ratio * 0.35
+            total_weight = sum(weights)
+            weights = [w / total_weight for w in weights]
+
+        requester_types = list(REQUESTER_PRIORITY.keys())
+        requester_weights = [0.22, 0.20, 0.10, 0.08, 0.40]
+        document_types = list(DOCUMENT_COMPLEXITY.keys())
+
+        morning_count = int(total_requests * 0.60)
+        afternoon_count = int(total_requests * 0.20)
+        evening_count = total_requests - morning_count - afternoon_count
+
+        def _next_urgency() -> int:
+            low = max(1, urgency_base - 2)
+            high = min(10, urgency_base + 2)
+            value = self.rng.triangular(low, high, urgency_base)
+            return int(round(max(1, min(10, value))))
+
+        requests: List[DocumentRequest] = []
+        request_counter = 1
+
+        def _add_batch(count: int, hour_min: float, hour_max: float):
+            nonlocal request_counter
+            for _ in range(count):
+                submission_offset_hours = self.rng.uniform(hour_min, hour_max)
+                submission_time = self.start_time + timedelta(hours=submission_offset_hours)
+                college = self.rng.choices(colleges, weights=weights, k=1)[0]
+                document_type = self.rng.choice(document_types)
+                requester_type = self.rng.choices(requester_types, weights=requester_weights, k=1)[0]
+
+                requests.append(
+                    DocumentRequest(
+                        request_id=f"REQ{request_counter:04d}",
+                        college=college,
+                        document_type=document_type,
+                        urgency=_next_urgency(),
+                        requester_type=requester_type,
+                        submission_time=submission_time,
+                    )
+                )
+                request_counter += 1
+
+        _add_batch(morning_count, 8, 10)
+        _add_batch(afternoon_count, 14, 16)
+        _add_batch(evening_count, 16, 24)
+
+        return requests
+
+    # ---------------------------------------------------------------------
+    # Allocation helpers
+    # ---------------------------------------------------------------------
+
+    def _active_staff(self) -> List[StaffMember]:
+        return [staff for staff in self.staff_pool if staff.is_available]
+
+    def _same_college_staff(self, college: str) -> List[StaffMember]:
+        return [
+            staff
+            for staff in self.staff_pool
+            if staff.is_available and staff.college_affiliation == college
+        ]
+
+    def _first_slot_for_staff(
+        self,
+        staff: StaffMember,
+        earliest_time: datetime,
+        enforce_quota: bool,
+    ) -> Optional[datetime]:
+        if not staff.is_available:
+            return None
+
+        # Quota-based variants model assignment as a daily intake process.
+        # They should not be blocked by completion_time of previously assigned requests.
+        if enforce_quota:
+            candidate = self._next_working_start(earliest_time)
         else:
-            raise ValueError(f"Unknown scheduler: {self.scheduler_type}")
-        
-        # STEP 4: MATHEMATICAL ASSIGNMENT WITH COLLEGE-BASED ALLOCATION
-        print(f"\n⚙️  Step 4: Assigning requests with college-based quota (20/staff/day)...")
-        
-        # Track requests assigned per college per day
-        # Key: (day, college), Value: count of requests assigned that day
-        daily_college_quota = {}
-        
-        for idx, req in enumerate(sorted_requests):
-            # What day does this request arrive?
-            arrival_hours = (req.submission_time - self.start_time).total_seconds() / 3600
-            req_arrival_day = int(arrival_hours / 24)
-            
-            # Find the first day when this college's staff has quota available
-            # Start from arrival day and keep checking forward
-            assignment_day = req_arrival_day
-            while True:
-                quota_key = (assignment_day, req.college)
-                assigned_this_day = daily_college_quota.get(quota_key, 0)
-                
-                if assigned_this_day < 20:
-                    # Found a day with available quota, use it
-                    break
-                else:
-                    # This day is full, try next day
-                    assignment_day += 1
-            
-            # Set assignment time
-            if assignment_day == req_arrival_day:
-                # Same day as arrival - assign at submission time
-                assignment_time = req.submission_time
-            else:
-                # Future day - assign at 8am
-                assignment_time = self.start_time + timedelta(days=assignment_day, hours=8)
-            
-            # Find the college's assigned staff (1:1 college-to-staff)
-            college_staff = [s for s in self.staff_pool if s.college_affiliation == req.college]
-            if not college_staff:
-                # No staff for this college - add to waiting queue
-                self.waiting_queue.append(req)
+            # Quota-free keeps strict per-staff availability sequencing.
+            candidate = max(earliest_time, staff.next_available_time or earliest_time)
+            candidate = self._next_working_start(candidate)
+
+        # Keep shifting to next workday start while quota is full.
+        # Guard with finite loop to avoid accidental infinite loops.
+        for _ in range(2000):
+            if not enforce_quota:
+                return candidate
+
+            assigned_today = staff.assignments_on_day(candidate.date())
+            if assigned_today < staff.quota_limit:
+                return candidate
+
+            candidate = self._day_start(candidate.date() + timedelta(days=1))
+            candidate = self._next_working_start(candidate)
+
+        return None
+
+    def _build_staff_options(
+        self,
+        request: DocumentRequest,
+        staff_group: List[StaffMember],
+        earliest_time: datetime,
+        enforce_quota: bool,
+        exact_time: Optional[datetime] = None,
+    ) -> List[Tuple[datetime, StaffMember]]:
+        options: List[Tuple[datetime, StaffMember]] = []
+        for staff in staff_group:
+            slot = self._first_slot_for_staff(staff, earliest_time, enforce_quota)
+            if slot is None:
                 continue
-            staff = college_staff[0]
-            
-            # Calculate queue wait time
-            queue_wait_hours = (assignment_time - req.submission_time).total_seconds() / 3600
-            
-            req.assignment_time = assignment_time
-            req.assigned_staff = staff.staff_id
-            
-            # Calculate processing time in days (±20% variation)
-            base_days = DOCUMENT_COMPLEXITY[req.document_type]
-            processing_days = random.uniform(base_days * 0.8, base_days * 1.2)
-            
-            # Completion = assignment + processing (all requests process in PARALLEL)
-            req.completion_time = assignment_time + timedelta(days=processing_days)
-            
-            # Update quota counter for assignment day
-            quota_key = (assignment_day, req.college)
-            daily_college_quota[quota_key] = daily_college_quota.get(quota_key, 0) + 1
-            
-            self.completed.append(req)
-            
-            # Progress indicator (every 20 requests or key milestones)
-            if (idx + 1) % 20 == 0 or idx == 0 or idx == len(sorted_requests) - 1:
-                print(f"   [{idx+1:3d}/{len(sorted_requests)}] {req.college}: Assigned to {staff.staff_id} "
-                      f"(Queue: {queue_wait_hours:.1f}h, Process: {processing_days:.1f}d, Day: {assignment_day})")
-        
-        # STEP 5: Calculate final metrics and track absent staff
-        print(f"\n📊 Step 5: Calculating metrics...")
-        metrics = self._calculate_metrics()
-        
-        # Add absent staff info - compare current pool to full pool
-        full_staff = self._init_all_staff()
-        current_staff_ids = set(s.staff_id for s in self.staff_pool)
-        absent_staff_ids = [s.staff_id for s in full_staff if s.staff_id not in current_staff_ids]
-        
-        metrics['absent_staff'] = absent_staff_ids
-        metrics['waiting_queue'] = self.waiting_queue
-        
-        print(f"\n{'='*70}")
-        print(f"✅ SIMULATION COMPLETE - {len(self.completed)} PROCESSED, {len(self.waiting_queue)} WAITING")
-        if absent_staff_ids:
-            print(f"⚠️  ABSENT STAFF: {', '.join(absent_staff_ids)}")
-        print(f"{'='*70}\n")
-        
-        return metrics
-    
+            if exact_time is not None and slot != exact_time:
+                continue
+            options.append((slot, staff))
+        return options
+
+    def _select_from_options(
+        self,
+        options: List[Tuple[datetime, StaffMember]],
+        mode: str,
+    ) -> Optional[Tuple[datetime, StaffMember]]:
+        if not options:
+            return None
+
+        if mode == "earliest":
+            return min(options, key=lambda item: (item[0], item[1].total_assigned, item[1].staff_id))
+        if mode == "least_loaded":
+            return min(options, key=lambda item: (item[1].total_assigned, item[0], item[1].staff_id))
+        if mode == "pooled":
+            return min(options, key=lambda item: (item[0], item[1].total_assigned, item[1].staff_id))
+        return min(options, key=lambda item: (item[0], item[1].staff_id))
+
+    def _select_assignment(
+        self,
+        request: DocumentRequest,
+        reference_time: datetime,
+        exact_time: Optional[datetime] = None,
+    ) -> Optional[Tuple[StaffMember, datetime, str]]:
+        allocator = self.allocator_type
+        request_day = request.submission_time.date()
+        earliest = max(reference_time, request.submission_time)
+
+        same_college = self._same_college_staff(request.college)
+        all_active = self._active_staff()
+        other_staff = [s for s in all_active if s.college_affiliation != request.college]
+
+        if allocator == "college_based":
+            if not same_college:
+                return None
+            options = self._build_staff_options(
+                request,
+                same_college,
+                earliest,
+                enforce_quota=True,
+                exact_time=exact_time,
+            )
+            chosen = self._select_from_options(options, mode="earliest")
+            if not chosen:
+                return None
+            slot, staff = chosen
+            return staff, slot, "same_college"
+
+        if allocator == "quota_free":
+            if not same_college:
+                return None
+            options = self._build_staff_options(
+                request,
+                same_college,
+                earliest,
+                enforce_quota=False,
+                exact_time=exact_time,
+            )
+            chosen = self._select_from_options(options, mode="earliest")
+            if not chosen:
+                return None
+            slot, staff = chosen
+            return staff, slot, "same_college_no_quota"
+
+        if allocator == "pooled":
+            options = self._build_staff_options(
+                request,
+                all_active,
+                earliest,
+                enforce_quota=True,
+                exact_time=exact_time,
+            )
+            chosen = self._select_from_options(options, mode="pooled")
+            if not chosen:
+                return None
+            slot, staff = chosen
+            return staff, slot, "pooled_earliest"
+
+        # workload_based
+        same_options = self._build_staff_options(
+            request,
+            same_college,
+            earliest,
+            enforce_quota=True,
+            exact_time=exact_time,
+        )
+        same_day_same = [item for item in same_options if item[0].date() == request_day]
+        chosen = self._select_from_options(same_day_same, mode="least_loaded")
+        if chosen:
+            slot, staff = chosen
+            return staff, slot, "same_college_least_loaded"
+
+        fallback_options = self._build_staff_options(
+            request,
+            other_staff,
+            earliest,
+            enforce_quota=True,
+            exact_time=exact_time,
+        )
+        same_day_fallback = [item for item in fallback_options if item[0].date() == request_day]
+        chosen = self._select_from_options(same_day_fallback, mode="least_loaded")
+        if chosen:
+            slot, staff = chosen
+            return staff, slot, "cross_college_same_day_fallback"
+
+        combined = same_options + fallback_options
+        chosen = self._select_from_options(combined, mode="earliest")
+        if not chosen:
+            return None
+        slot, staff = chosen
+        return staff, slot, "next_available_day"
+
+    # ---------------------------------------------------------------------
+    # Event logging helpers
+    # ---------------------------------------------------------------------
+
+    def _log_event(
+        self,
+        event_time: datetime,
+        event_type: str,
+        request: Optional[DocumentRequest] = None,
+        staff: Optional[StaffMember] = None,
+        details: str = "",
+        extra: Optional[Dict] = None,
+    ):
+        self._event_seq += 1
+        payload = {
+            "sequence": self._event_seq,
+            "time": event_time,
+            "event_type": event_type,
+            "request_id": request.request_id if request else None,
+            "college": request.college if request else None,
+            "document_type": request.document_type if request else None,
+            "staff_id": staff.staff_id if staff else None,
+            "details": details,
+        }
+        if request is not None:
+            payload["priority_score"] = round(request.priority_score, 4)
+        if extra:
+            payload.update(extra)
+        self.event_log.append(payload)
+
+    def _finalize_event_log(self):
+        priority = {
+            "ARRIVAL": 0,
+            "PRIORITY": 1,
+            "ASSIGN": 2,
+            "WAITING": 3,
+            "COMPLETE": 4,
+            "INFO": 5,
+        }
+        self.event_log.sort(
+            key=lambda ev: (
+                ev["time"],
+                priority.get(ev["event_type"], 99),
+                ev["sequence"],
+            )
+        )
+        for index, event in enumerate(self.event_log):
+            event["frame"] = index
+
+    def _serialize_event(self, event: Dict) -> Dict:
+        result = event.copy()
+        result["time"] = result["time"].isoformat()
+        return result
+
+    # ---------------------------------------------------------------------
+    # Assignment + processing helpers
+    # ---------------------------------------------------------------------
+
+    def _processing_duration(self, request: DocumentRequest) -> timedelta:
+        base_workdays = float(DOCUMENT_COMPLEXITY.get(request.document_type, 1))
+        per_request_rng = random.Random(f"{self.random_seed}:{request.request_id}:proc")
+        multiplier = per_request_rng.uniform(0.8, 1.2)
+        processing_hours = base_workdays * (self.workday_minutes / 60.0) * multiplier
+        return timedelta(hours=processing_hours)
+
+    def _assign_request(
+        self,
+        request: DocumentRequest,
+        staff: StaffMember,
+        assignment_time: datetime,
+        assignment_mode: str,
+    ):
+        processing_duration = self._processing_duration(request)
+        completion_time = self._add_processing_with_work_hours(assignment_time, processing_duration)
+
+        request.assignment_time = assignment_time
+        request.completion_time = completion_time
+        request.assigned_staff = staff.staff_id
+
+        staff.total_assigned += 1
+        staff.increment_day_quota(assignment_time.date())
+
+        # Keep strict sequencing only for quota-free mode.
+        if self.allocator_type == "quota_free":
+            staff.next_available_time = completion_time
+        else:
+            staff.next_available_time = assignment_time
+
+        self.completed.append(request)
+
+        wait_hours = (assignment_time - request.submission_time).total_seconds() / 3600.0
+        self._log_event(
+            assignment_time,
+            "ASSIGN",
+            request=request,
+            staff=staff,
+            details=assignment_mode,
+            extra={
+                "queue_wait_hours": round(wait_hours, 2),
+                "processing_hours": round(processing_duration.total_seconds() / 3600.0, 2),
+            },
+        )
+        self._log_event(
+            completion_time,
+            "COMPLETE",
+            request=request,
+            staff=staff,
+            details="request_completed",
+        )
+
+    # ---------------------------------------------------------------------
+    # Scheduler execution
+    # ---------------------------------------------------------------------
+
+    def _run_fcfs(self, requests: List[DocumentRequest]):
+        for req in requests:
+            self.scheduler.add_request(req)
+            self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_arrived")
+
+        sorted_requests = self.scheduler.get_all_sorted()
+
+        for req in sorted_requests:
+            selected = self._select_assignment(req, reference_time=req.submission_time)
+            if selected is None:
+                self.waiting_queue.append(req)
+                self._log_event(
+                    req.submission_time,
+                    "WAITING",
+                    request=req,
+                    details="no_eligible_staff",
+                )
+                continue
+
+            staff, assignment_time, mode = selected
+            self._assign_request(req, staff, assignment_time, mode)
+
+    def _run_weighted(self, requests: List[DocumentRequest]):
+        arrivals = sorted(requests, key=lambda r: r.submission_time)
+        pending: List[DocumentRequest] = []
+        index = 0
+
+        if arrivals:
+            current_time = arrivals[0].submission_time
+        else:
+            current_time = self._day_start(self.start_time.date())
+
+        current_time = self._next_working_start(current_time)
+
+        while index < len(arrivals) or pending:
+            # If pending is empty, move to next arrival and add it.
+            if not pending and index < len(arrivals):
+                current_time = max(current_time, arrivals[index].submission_time)
+
+            while index < len(arrivals) and arrivals[index].submission_time <= current_time:
+                req = arrivals[index]
+                pending.append(req)
+                self.scheduler.add_request(req)
+                self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_arrived")
+                index += 1
+
+            if not pending:
+                continue
+
+            ranked = self.scheduler.rank(
+                current_time=current_time,
+                weights=self.priority_weights,
+                workday_minutes=self.workday_minutes,
+            )
+
+            top_preview = [
+                f"{item.request_id}:{item.priority_score:.3f}" for item in ranked[:3]
+            ]
+            self._log_event(
+                current_time,
+                "PRIORITY",
+                details="top_pending=" + ", ".join(top_preview),
+                extra={"pending_count": len(ranked)},
+            )
+
+            selected_tuple: Optional[Tuple[DocumentRequest, StaffMember, datetime, str]] = None
+
+            # Pick highest-priority request that is assignable right now.
+            for req in ranked:
+                candidate = self._select_assignment(req, reference_time=current_time, exact_time=current_time)
+                if candidate is None:
+                    continue
+                staff, assignment_time, mode = candidate
+                selected_tuple = (req, staff, assignment_time, mode)
+                break
+
+            if selected_tuple is not None:
+                req, staff, assignment_time, mode = selected_tuple
+                self.scheduler.remove_request(req)
+                pending.remove(req)
+                self._assign_request(req, staff, assignment_time, mode)
+                continue
+
+            # Nothing assignable now. Advance to next event (arrival or future slot).
+            next_arrival_time = arrivals[index].submission_time if index < len(arrivals) else None
+            next_slot_time: Optional[datetime] = None
+
+            for req in ranked:
+                candidate = self._select_assignment(req, reference_time=current_time)
+                if candidate is None:
+                    continue
+                _, slot_time, _ = candidate
+                if next_slot_time is None or slot_time < next_slot_time:
+                    next_slot_time = slot_time
+
+            if next_arrival_time is None and next_slot_time is None:
+                # Remaining pending requests are impossible to route.
+                for req in pending:
+                    self.scheduler.remove_request(req)
+                    self.waiting_queue.append(req)
+                    self._log_event(
+                        current_time,
+                        "WAITING",
+                        request=req,
+                        details="no_eligible_staff",
+                    )
+                pending.clear()
+                break
+
+            candidate_times = [t for t in [next_arrival_time, next_slot_time] if t is not None]
+            current_time = min(candidate_times)
+            current_time = self._next_working_start(current_time)
+
+    # ---------------------------------------------------------------------
+    # Metrics and public run API
+    # ---------------------------------------------------------------------
+
     def _calculate_metrics(self) -> Dict:
-        """
-        Calculate performance metrics from completed requests.
-        
-        METRICS CALCULATED:
-        1. avg_waiting_time: Average queue time before assignment (in hours)
-        2. avg_turnaround: Average total time from submission to completion (in days)
-        3. total_days_elapsed: How many days until ALL requests finished
-        4. throughput: Requests per day
-        5. staff_load: How many requests each staff processed
-        
-        INTERPRETATION:
-        - Lower avg_waiting_time = responsive scheduler
-        - Lower avg_turnaround = efficient system
-        - Higher throughput = more requests per day
-        - Balanced staff_load = fair allocation
-        """
-        
         if not self.completed:
             return {
-                "avg_waiting_time": 0,
-                "avg_turnaround": 0,
-                "total_days_elapsed": 0,
-                "throughput": 0,
+                "avg_waiting_time_hours": 0.0,
+                "avg_turnaround_days": 0.0,
+                "total_days_elapsed": 0.0,
+                "throughput_req_per_day": 0.0,
                 "total_processed": 0,
-                "staff_load": {s.staff_id: 0 for s in self.staff_pool},
-                "scenario": self.scenario
+                "staff_load": {staff.staff_id: 0 for staff in self.staff_pool},
+                "scenario": self.scenario,
             }
-        
-        # Calculate metrics
-        # WAITING TIME: from submission to assignment (in hours/minutes)
-        waiting_times_hours = [
-            req.get_waiting_time_minutes() / 60 for req in self.completed
-        ]
-        
-        # TURNAROUND TIME: from submission to completion (in days)
-        turnaround_times_days = [
-            (req.completion_time - req.submission_time).total_seconds() / 86400 
-            for req in self.completed
-        ]
-        
-        # TOTAL ELAPSED DAYS: from first submission to last completion
-        if self.completed:
-            first_submission = min(r.submission_time for r in self.completed)
-            last_completion = max(r.completion_time for r in self.completed)
-            total_days_elapsed = (last_completion - first_submission).total_seconds() / 86400
-        else:
-            total_days_elapsed = 0
-        
-        # THROUGHPUT: requests per day
-        throughput = len(self.completed) / max(total_days_elapsed, 1)
-        
-        # STAFF LOAD: count how many requests each staff member processed
-        staff_load = {s.staff_id: 0 for s in self.staff_pool}
+
+        waiting_hours = [req.get_waiting_time_minutes() / 60.0 for req in self.completed]
+        turnaround_days = [req.get_turnaround_time_minutes() / 1440.0 for req in self.completed]
+
+        first_submission = min(req.submission_time for req in self.completed)
+        last_completion = max(req.completion_time for req in self.completed if req.completion_time)
+        total_days_elapsed = max((last_completion - first_submission).total_seconds() / 86400.0, 0.0)
+
+        throughput = len(self.completed) / max(total_days_elapsed, 1.0)
+
+        staff_load = {staff.staff_id: 0 for staff in self.staff_pool}
         for req in self.completed:
             if req.assigned_staff in staff_load:
                 staff_load[req.assigned_staff] += 1
-        
-        metrics = {
-            "avg_waiting_time_hours": round(sum(waiting_times_hours) / len(waiting_times_hours), 2),
-            "avg_turnaround_days": round(sum(turnaround_times_days) / len(turnaround_times_days), 2),
+
+        return {
+            "avg_waiting_time_hours": round(sum(waiting_hours) / len(waiting_hours), 2),
+            "avg_turnaround_days": round(sum(turnaround_days) / len(turnaround_days), 2),
             "total_days_elapsed": round(total_days_elapsed, 2),
             "throughput_req_per_day": round(throughput, 2),
             "total_processed": len(self.completed),
             "staff_load": staff_load,
-            "scenario": self.scenario
+            "scenario": self.scenario,
         }
-        
+
+    def run(self, custom_config: Optional[Dict] = None) -> Dict:
+        config = self._build_run_config(custom_config)
+        self.scenario = config["scenario"]
+
+        self.start_time = self._default_day_start(datetime.now())
+        self._reset_for_run()
+        self._apply_staff_absence(config["num_absent_staff"])
+
+        requests = self._generate_requests(config)
+        self.generated_requests = requests
+
+        if self.scheduler_type == "FCFS":
+            self._run_fcfs(requests)
+        elif self.scheduler_type == "WEIGHTED":
+            self._run_weighted(requests)
+        else:
+            raise ValueError(f"Unsupported scheduler_type: {self.scheduler_type}")
+
+        self._finalize_event_log()
+        metrics = self._calculate_metrics()
+
+        metrics.update(
+            {
+                "scheduler_type": self.scheduler_type,
+                "allocator_type": self.allocator_type,
+                "seed_used": self.random_seed,
+                "run_config": config,
+                "priority_weights": self.priority_weights,
+                "work_hours": {
+                    "start": self._clock_string(self.work_start_minutes),
+                    "end": self._clock_string(self.work_end_minutes),
+                },
+                "waiting_queue_count": len(self.waiting_queue),
+                "waiting_queue": [req.to_dict() for req in self.waiting_queue],
+                "completed_requests": [req.to_dict() for req in self.completed],
+                "generated_requests": [req.to_dict() for req in self.generated_requests],
+                "event_log": [self._serialize_event(event) for event in self.event_log],
+                "absent_staff": self.absent_staff_ids,
+            }
+        )
+
         return metrics
 
 
-# Backward-compatible alias for code that imported SimulationEngine1.
+# Backward-compatible alias
 SimulationEngine1 = SimulationEngine
-

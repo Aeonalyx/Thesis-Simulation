@@ -56,14 +56,26 @@ def run_simulation():
     """
     Run a simulation with custom parameters
     
-    Request JSON:
+    Request JSON (all optional):
     {
         "scheduler_type": "FCFS",
         "allocator_type": "college_based",
         "scenario": "baseline",
         "num_staff": 6,
         "quota_limit": 20,
-        "num_requests": 80
+        "total_requests": 200,
+        "urgency_base": 5,
+        "imbalance_factor": 0,
+        "num_absent_staff": 0,
+        "random_seed": 12345,
+        "work_start": "08:00",
+        "work_end": "17:00",
+        "priority_weights": {
+            "urgency": 0.4,
+            "requester_type": 0.25,
+            "waiting_time": 0.2,
+            "document_type": 0.15
+        }
     }
     
     Returns: Simulation metrics and results
@@ -77,7 +89,14 @@ def run_simulation():
         scenario = data.get('scenario', 'baseline')
         num_staff = data.get('num_staff', 6)
         quota_limit = data.get('quota_limit', 20)
-        num_requests = data.get('num_requests', 80)  # Not directly used yet, needs override in engine
+        total_requests = data.get('total_requests', data.get('num_requests', 200))
+        urgency_base = data.get('urgency_base', 5)
+        imbalance_factor = data.get('imbalance_factor', 0)
+        num_absent_staff = data.get('num_absent_staff', 0)
+        random_seed = data.get('random_seed')
+        work_start = data.get('work_start', '08:00')
+        work_end = data.get('work_end', '17:00')
+        priority_weights = data.get('priority_weights')
         
         # Validate inputs
         if scheduler_type not in ['FCFS', 'WEIGHTED']:
@@ -96,10 +115,20 @@ def run_simulation():
             staff_config={
                 "num_staff": num_staff,
                 "quota_limit": quota_limit
-            }
+            },
+            priority_weights=priority_weights,
+            random_seed=random_seed,
+            work_start=work_start,
+            work_end=work_end,
         )
-        
-        results = engine.run(scenario=scenario)
+
+        results = engine.run(custom_config={
+            "scenario": scenario,
+            "total_requests": total_requests,
+            "urgency_base": urgency_base,
+            "imbalance_factor": imbalance_factor,
+            "num_absent_staff": num_absent_staff,
+        })
         
         # Return results with additional metadata
         return jsonify({
@@ -109,7 +138,14 @@ def run_simulation():
                 "allocator_type": allocator_type,
                 "scenario": scenario,
                 "num_staff": num_staff,
-                "quota_limit": quota_limit
+                "quota_limit": quota_limit,
+                "total_requests": total_requests,
+                "urgency_base": urgency_base,
+                "imbalance_factor": imbalance_factor,
+                "num_absent_staff": num_absent_staff,
+                "random_seed": results.get("seed_used"),
+                "work_start": work_start,
+                "work_end": work_end,
             },
             "results": results,
             "completed_requests": len(engine.completed),
@@ -132,14 +168,20 @@ def run_quick_simulation():
     """
     try:
         data = request.get_json() or {}
+        random_seed = data.get('random_seed')
+        total_requests = data.get('total_requests', data.get('num_requests', 200))
         
         engine = SimulationEngine(
             scheduler_type='FCFS',
             allocator_type='college_based',
-            staff_config={"num_staff": 6, "quota_limit": 20}
+            staff_config={"num_staff": 6, "quota_limit": 20},
+            random_seed=random_seed,
         )
-        
-        results = engine.run(scenario='baseline')
+
+        results = engine.run(custom_config={
+            "scenario": 'baseline',
+            "total_requests": total_requests,
+        })
         
         return jsonify({
             "success": True,
@@ -168,21 +210,40 @@ def compare_allocators():
     try:
         data = request.get_json() or {}
         
+        scheduler_type = data.get('scheduler_type', 'FCFS')
         scenario = data.get('scenario', 'baseline')
         num_staff = data.get('num_staff', 6)
         quota_limit = data.get('quota_limit', 20)
+        total_requests = data.get('total_requests', 200)
+        urgency_base = data.get('urgency_base', 5)
+        imbalance_factor = data.get('imbalance_factor', 0)
+        num_absent_staff = data.get('num_absent_staff', 0)
+        random_seed = data.get('random_seed', 12345)
+        work_start = data.get('work_start', '08:00')
+        work_end = data.get('work_end', '17:00')
+        priority_weights = data.get('priority_weights')
         
         allocators = ['college_based', 'workload_based', 'pooled', 'quota_free']
         results = {}
         
         for allocator in allocators:
             engine = SimulationEngine(
-                scheduler_type='FCFS',
+                scheduler_type=scheduler_type,
                 allocator_type=allocator,
-                staff_config={"num_staff": num_staff, "quota_limit": quota_limit}
+                staff_config={"num_staff": num_staff, "quota_limit": quota_limit},
+                priority_weights=priority_weights,
+                random_seed=random_seed,
+                work_start=work_start,
+                work_end=work_end,
             )
-            
-            sim_results = engine.run(scenario=scenario)
+
+            sim_results = engine.run(custom_config={
+                "scenario": scenario,
+                "total_requests": total_requests,
+                "urgency_base": urgency_base,
+                "imbalance_factor": imbalance_factor,
+                "num_absent_staff": num_absent_staff,
+            })
             results[allocator] = {
                 "metrics": sim_results,
                 "staff_load": sim_results['staff_load']
@@ -190,7 +251,9 @@ def compare_allocators():
         
         return jsonify({
             "success": True,
+            "scheduler_type": scheduler_type,
             "scenario": scenario,
+            "seed_used": random_seed,
             "comparison": results
         }), 200
         
