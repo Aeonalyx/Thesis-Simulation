@@ -1547,7 +1547,7 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
         st.session_state.comparison_df = compare_df
 
 if st.session_state.comparison_df is not None:
-    st.dataframe(st.session_state.comparison_df, use_container_width=True, hide_index=True)
+    render_theme_table(st.session_state.comparison_df, height_px=360)
 
 
 # ============================================================================
