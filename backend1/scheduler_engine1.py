@@ -1013,7 +1013,7 @@ class SimulationEngine:
                 self._log_event(req.submission_time, "WAITING", request=req, details="no_eligible_staff")
                 continue
             
-        # Calculate assignment time (respect working hours)
+            # Calculate assignment time (respect working hours)
             assign_time = max(req.submission_time, staff.next_available_time)
             assign_time = self._snap_to_work_hours(assign_time)
 
@@ -1026,23 +1026,21 @@ class SimulationEngine:
                 assign_time = self.start_time + timedelta(days=assign_day, hours=8)
                 assign_time = self._snap_to_work_hours(assign_time)
         
-        # Processing time with variation
+            # Processing time with variation
             base_hours = DOCUMENT_COMPLEXITY.get(req.document_type, 1.0)
             proc_hours = self.rng.uniform(base_hours * 0.8, base_hours * 1.2)
 
         
-        # ✅ USE WORKING HOURS HELPER (8 AM - 5 PM)
+            # ✅ USE WORKING HOURS HELPER (8 AM - 5 PM)
             comp_time = self._process_with_work_hours(assign_time, proc_hours / 24.0)
         
-        # Update request & staff state
+            # Update request & staff state
             req.assignment_time = assign_time
             req.completion_time = comp_time
             req.assigned_staff = staff.staff_id
             staff.next_available_time = comp_time
             staff.total_assigned += 1  # For "least loaded" selection in allocators
         
-        # 🔑 UPDATE DAILY QUOTA TRACKER (per staff, per day)
-            # 🔑 UPDATE DAILY QUOTA TRACKER for ASSIGNMENT DAY (not submission day)
             quota_tracker.setdefault(staff.staff_id, {})[assign_day] = \
                 quota_tracker.get(staff.staff_id, {}).get(assign_day, 0) + 1
         
