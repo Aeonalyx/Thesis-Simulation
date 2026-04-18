@@ -492,18 +492,6 @@ class CollegeBasedAllocator(BaseAllocator):
         if candidates:
             return min(candidates, key=lambda s: s.next_available_time)
         
-        # 🔑 PASTE NEXT-DAY SEARCH HERE ▼
-        for day in range(req_day + 1, req_day + 30):
-            candidates = [
-                s for s in self.staff_pool 
-                if s.college_affiliation == request.college 
-                and s.is_available
-                and quota_tracker.get(s.staff_id, {}).get(day, 0) < s.quota_limit
-            ]
-            if candidates:
-                return min(candidates, key=lambda s: s.next_available_time)
-        # 🔑 PASTE NEXT-DAY SEARCH HERE ▲
-        
         return None
 
 
@@ -592,17 +580,6 @@ class WorkloadBasedAllocator(BaseAllocator):
         if available:
             return min(available, key=lambda s: s.total_assigned)
         
-        # 🔑 PASTE NEXT-DAY SEARCH HERE ▼
-        for day in range(req_day + 1, req_day + 30):
-            candidates = [
-                s for s in self.staff_pool 
-                if s.is_available
-                and (quota_tracker is None or quota_tracker.get(s.staff_id, {}).get(day, 0) < s.quota_limit)
-            ]
-            if candidates:
-                return min(candidates, key=lambda s: s.total_assigned)
-        # 🔑 PASTE NEXT-DAY SEARCH HERE ▲
-        
         return None
 
 
@@ -675,17 +652,6 @@ class PooledAllocator(BaseAllocator):
         if available:
             return min(available, key=lambda s: s.next_available_time)
         
-        # 🔑 PASTE NEXT-DAY SEARCH HERE ▼
-        for day in range(req_day + 1, req_day + 30):
-            candidates = [
-                s for s in self.staff_pool 
-                if s.is_available
-                and quota_tracker.get(s.staff_id, {}).get(day, 0) < s.quota_limit
-            ]
-            if candidates:
-                return min(candidates, key=lambda s: s.next_available_time)
-        # 🔑 PASTE NEXT-DAY SEARCH HERE ▲
-        
         return None
 
 
@@ -737,15 +703,6 @@ class QuotaFreeAllocator(BaseAllocator):
         if candidates:
             # Pick least busy (whoever has earliest next_available_time)
             return min(candidates, key=lambda s: s.next_available_time)
-        
-        for day in range(req_day + 1, req_day + 30):
-            candidates = [
-                s for s in self.staff_pool 
-                if s.college_affiliation == request.college 
-                and s.is_available
-            ]
-            if candidates:
-                return min(candidates, key=lambda s: s.next_available_time)
         
         return None
 
@@ -837,6 +794,30 @@ class SimulationEngine:
         self.in_progress: List[DocumentRequest] = []     # Currently being processed
         self.start_time = datetime.now()
         self.scenario = "baseline"
+        self.event_log: List[Dict] = []
+        self._event_seq = 0
+
+    def _log_event(self, event_time: datetime, event_type: str, 
+                   request: Optional[DocumentRequest] = None, 
+                   staff: Optional[StaffMember] = None, 
+                   details: str = "", extra: Optional[Dict] = None):
+        """Log a simulation event for debugging and frontend playback."""
+        self._event_seq += 1
+        payload = {
+            "sequence": self._event_seq,
+            "time": event_time.isoformat(),
+            "event_type": event_type,
+            "request_id": request.request_id if request else None,
+            "college": request.college if request else None,
+            "document_type": request.document_type if request else None,
+            "staff_id": staff.staff_id if staff else None,
+            "details": details
+        }
+        if request:
+            payload["priority_score"] = round(request.priority_score, 4)
+        if extra:
+            payload.update(extra)
+        self.event_log.append(payload)
     
     def _init_all_staff(self) -> List[StaffMember]:
         """
@@ -1018,6 +999,10 @@ class SimulationEngine:
         quota_tracker: Dict[str, Dict[int, int]] = {}  # {staff_id: {day_idx: count}}
     
         print(f"\n⚙️  Step 3: Assigning requests via {self.allocator_type} allocator...")
+
+         # Log all arrivals first
+        for req in sorted_requests:
+            self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_submitted")
     
         for idx, req in enumerate(sorted_requests):
             # 🔑 CRITICAL: Ask the ALLOCATOR for assignment (this is what makes strategies work)
@@ -1025,18 +1010,29 @@ class SimulationEngine:
             staff = self.allocator.assign(req, self.start_time, quota_tracker, req_day)
             if staff is None:
                 self.waiting_queue.append(req)
+                self._log_event(req.submission_time, "WAITING", request=req, details="no_eligible_staff")
                 continue
             
         # Calculate assignment time (respect working hours)
             assign_time = max(req.submission_time, staff.next_available_time)
             assign_time = self._snap_to_work_hours(assign_time)
+
+
+            # 2. 🔑 QUOTA OVERFLOW: If quota full for this day, defer to next day 8 AM (ONLY ONCE)
+            assign_day = int((assign_time - self.start_time).total_seconds() // 86400)
+            if quota_tracker.get(staff.staff_id, {}).get(assign_day, 0) >= staff.quota_limit:
+                # Quota full → defer to next business day at 8 AM
+                assign_day += 1
+                assign_time = self.start_time + timedelta(days=assign_day, hours=8)
+                assign_time = self._snap_to_work_hours(assign_time)
         
         # Processing time with variation
-            base_days = DOCUMENT_COMPLEXITY.get(req.document_type, 1.0)
-            proc_days = self.rng.uniform(base_days * 0.8, base_days * 1.2)
+            base_hours = DOCUMENT_COMPLEXITY.get(req.document_type, 1.0)
+            proc_hours = self.rng.uniform(base_hours * 0.8, base_hours * 1.2)
+
         
         # ✅ USE WORKING HOURS HELPER (8 AM - 5 PM)
-            comp_time = self._process_with_work_hours(assign_time, proc_days)
+            comp_time = self._process_with_work_hours(assign_time, proc_hours / 24.0)
         
         # Update request & staff state
             req.assignment_time = assign_time
@@ -1047,17 +1043,20 @@ class SimulationEngine:
         
         # 🔑 UPDATE DAILY QUOTA TRACKER (per staff, per day)
             # 🔑 UPDATE DAILY QUOTA TRACKER for ASSIGNMENT DAY (not submission day)
-            assign_day = int((assign_time - self.start_time).total_seconds() // 86400)
             quota_tracker.setdefault(staff.staff_id, {})[assign_day] = \
                 quota_tracker.get(staff.staff_id, {}).get(assign_day, 0) + 1
         
             self.completed.append(req)
-        
-        # ✅ KEEP: Progress logging
+
+            queue_wait_h = (assign_time - req.submission_time).total_seconds() / 3600.0
+            self._log_event(assign_time, "ASSIGN", request=req, staff=staff, 
+                           details=self.allocator_type,
+                           extra={"queue_wait_hours": round(queue_wait_h, 2), "processing_hours": round(proc_hours, 2)})
+            self._log_event(comp_time, "COMPLETE", request=req, staff=staff, details="processing_finished")
+            
             if (idx + 1) % 20 == 0 or idx == 0 or idx == len(sorted_requests) - 1:
-                queue_wait = (assign_time - req.submission_time).total_seconds() / 3600
                 print(f"   [{idx+1:3d}/{len(sorted_requests)}] {req.college}: → {staff.staff_id} "
-                    f"(Queue: {queue_wait:.1f}h, Process: {proc_days:.2f}d)")
+                      f"(Queue: {queue_wait_h:.1f}h, Process: {proc_hours:.2f}h)")
     
     # ✅ KEEP: Metrics & absent staff
         print(f"\n📊 Step 4: Calculating metrics...")
@@ -1165,9 +1164,12 @@ class SimulationEngine:
             "scenario": self.scenario
         }
         
+        self.event_log.sort(key=lambda e: e["time"])
+        
         metrics.update({
             "seed_used": self.random_seed,  
                     })
+        metrics["event_log"] = self.event_log
         
         return metrics
 
