@@ -14,18 +14,25 @@ from datetime import datetime, timedelta, date
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import random
-
+from backend1.roc_utils import PRIORITY_ROC_WEIGHTS
 
 # ============================================================================
 # DEFAULT CONFIGURATION
 # ============================================================================
 
-PRIORITY_WEIGHTS = {
-    "urgency": 0.40,
-    "requester_type": 0.25,
-    "waiting_time": 0.20,
-    "document_type": 0.15,
-}
+# from backend1.roc_utils import (
+#     urgency_weight,
+#     requester_type_weight,
+#     waiting_time_weight,
+#     document_type_weight,
+# )
+PRIORITY_WEIGHTS = PRIORITY_ROC_WEIGHTS
+# PRIORITY_WEIGHTS = {
+#     "urgency": 0.40,
+#     "requester_type": 0.25,
+#     "waiting_time": 0.20,
+#     "document_type": 0.15,
+# }
 
 REQUESTER_PRIORITY = {
     "Graduating Student": 10,
