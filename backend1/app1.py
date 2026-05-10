@@ -71,10 +71,12 @@ def run_simulation():
         "work_start": "08:00",
         "work_end": "17:00",
         "priority_weights": {
-            "urgency": 0.4,
-            "requester_type": 0.25,
-            "waiting_time": 0.2,
-            "document_type": 0.15
+            "completeness_of_requirements": 0.30,
+            "submission_time": 0.22,
+            "document_type": 0.18,
+            "requester_status": 0.14,
+            "college_affiliation": 0.10,
+            "payment_status": 0.06
         }
     }
     
@@ -87,7 +89,7 @@ def run_simulation():
         scheduler_type = data.get('scheduler_type', 'FCFS')
         allocator_type = data.get('allocator_type', 'college_based')
         scenario = data.get('scenario', 'baseline')
-        num_staff = data.get('num_staff', 6)
+        num_staff = data.get('num_staff', len(COLLEGES))
         quota_limit = data.get('quota_limit', 20)
         total_requests = data.get('total_requests', data.get('num_requests', 200))
         urgency_base = data.get('urgency_base', 5)
@@ -174,7 +176,7 @@ def run_quick_simulation():
         engine = SimulationEngine(
             scheduler_type='FCFS',
             allocator_type='college_based',
-            staff_config={"num_staff": 6, "quota_limit": 20},
+            staff_config={"num_staff": len(COLLEGES), "quota_limit": 20},
             random_seed=random_seed,
         )
 
@@ -212,7 +214,7 @@ def compare_allocators():
         
         scheduler_type = data.get('scheduler_type', 'FCFS')
         scenario = data.get('scenario', 'baseline')
-        num_staff = data.get('num_staff', 6)
+        num_staff = data.get('num_staff', len(COLLEGES))
         quota_limit = data.get('quota_limit', 20)
         total_requests = data.get('total_requests', 200)
         urgency_base = data.get('urgency_base', 5)

@@ -32,6 +32,25 @@ from backend1.scheduler_engine1 import (  # noqa: E402
 )
 
 
+CRITERIA_KEYS = list(PRIORITY_WEIGHTS.keys())
+CRITERIA_LABELS = {
+    "completeness_of_requirements": "Completeness of requirements",
+    "submission_time": "Submission time",
+    "document_type": "Document type",
+    "requester_status": "Requester status",
+    "college_affiliation": "College affiliation",
+    "payment_status": "Payment status",
+}
+
+
+def format_criterion_label(key: str) -> str:
+    return CRITERIA_LABELS.get(key, key.replace("_", " ").title())
+
+
+def weight_state_key(key: str) -> str:
+    return f"w_{key}"
+
+
 # ============================================================================
 # PAGE CONFIG
 # ============================================================================
@@ -331,10 +350,15 @@ SPEED_OPTIONS = {
     "4.00x": 0.10,
 }
 
+WEIGHT_DEFAULT_STATE = {
+    weight_state_key(key): int(PRIORITY_WEIGHTS.get(key, 0.0) * 100)
+    for key in CRITERIA_KEYS
+}
+
 DEFAULT_STATE = {
     "scheduler_type": "FCFS",
     "allocator_type": "college_based",
-    "num_staff": 6,
+    "num_staff": len(COLLEGES),
     "quota_limit": 20,
     "enable_absence": False,
     "total_requests": 200,
@@ -345,10 +369,7 @@ DEFAULT_STATE = {
     "work_end_time": time(17, 0),
     "seed_mode": "Auto",
     "manual_seed": 12345,
-    "w_urgency": int(PRIORITY_WEIGHTS["urgency"] * 100),
-    "w_requester": int(PRIORITY_WEIGHTS["requester_type"] * 100),
-    "w_waiting": int(PRIORITY_WEIGHTS["waiting_time"] * 100),
-    "w_document": int(PRIORITY_WEIGHTS["document_type"] * 100),
+    **WEIGHT_DEFAULT_STATE,
     "playback_frame": 0,
     "playback_frame_ui": 0,
     "playback_speed": "1.00x",
@@ -403,10 +424,7 @@ def collect_ui_config() -> Dict:
         "seed_mode": st.session_state.seed_mode,
         "manual_seed": int(st.session_state.manual_seed),
         "weights_raw": {
-            "urgency": int(st.session_state.w_urgency),
-            "requester_type": int(st.session_state.w_requester),
-            "waiting_time": int(st.session_state.w_waiting),
-            "document_type": int(st.session_state.w_document),
+            key: int(st.session_state[weight_state_key(key)]) for key in CRITERIA_KEYS
         },
     }
 
@@ -450,19 +468,13 @@ def apply_ui_config(config: Dict):
     st.session_state.manual_seed = int(config.get("manual_seed", st.session_state.manual_seed))
 
     raw = config.get("weights_raw", {})
-    st.session_state.w_urgency = int(raw.get("urgency", st.session_state.w_urgency))
-    st.session_state.w_requester = int(raw.get("requester_type", st.session_state.w_requester))
-    st.session_state.w_waiting = int(raw.get("waiting_time", st.session_state.w_waiting))
-    st.session_state.w_document = int(raw.get("document_type", st.session_state.w_document))
+    for key in CRITERIA_KEYS:
+        state_key = weight_state_key(key)
+        st.session_state[state_key] = int(raw.get(key, st.session_state[state_key]))
 
 
 def normalized_weights_from_ui() -> Dict[str, float]:
-    raw = {
-        "urgency": float(st.session_state.w_urgency),
-        "requester_type": float(st.session_state.w_requester),
-        "waiting_time": float(st.session_state.w_waiting),
-        "document_type": float(st.session_state.w_document),
-    }
+    raw = {key: float(st.session_state[weight_state_key(key)]) for key in CRITERIA_KEYS}
     total = sum(raw.values())
     if total <= 0:
         return PRIORITY_WEIGHTS.copy()
@@ -554,22 +566,26 @@ def format_compact_day(day_value) -> str:
         return str(day_value)
 
 
-def build_staff_college_map(staff_pool) -> Dict[str, str]:
-    mapping: Dict[str, str] = {}
+def build_staff_college_map(staff_pool) -> Dict[str, Dict[str, str]]:
+    mapping: Dict[str, Dict[str, str]] = {}
     for staff in staff_pool:
-        mapping[str(staff.staff_id)] = str(staff.college_affiliation)
+        mapping[str(staff.staff_id)] = {
+            "college": str(staff.college_affiliation),
+            "name": str(getattr(staff, "name", "")),
+        }
     return mapping
 
 
-def format_staff_label(staff_id: Optional[str], staff_map: Dict[str, str]) -> str:
+def format_staff_label(staff_id: Optional[str], staff_map: Dict[str, Dict[str, str]]) -> str:
     if not staff_id:
         return "UNASSIGNED"
     staff_text = str(staff_id)
     if staff_text.upper() == "UNASSIGNED":
         return "UNASSIGNED"
-    college = staff_map.get(staff_text)
-    if college and college != "-":
-        return f"{staff_text} ({college})"
+    meta = staff_map.get(staff_text, {})
+    name = str(meta.get("name", "")).strip()
+    if name:
+        return f"{staff_text} ({name})"
     return staff_text
 
 
@@ -755,7 +771,13 @@ st.sidebar.selectbox("Scheduler", SCHEDULER_OPTIONS, key="scheduler_type")
 st.sidebar.selectbox("Allocator", ALLOCATOR_OPTIONS, key="allocator_type")
 
 st.sidebar.subheader("Capacity and Policy")
-st.sidebar.slider("Number of Staff", min_value=1, max_value=6, step=1, key="num_staff")
+st.sidebar.slider(
+    "Number of Staff",
+    min_value=len(COLLEGES),
+    max_value=len(COLLEGES) * 2,
+    step=1,
+    key="num_staff",
+)
 st.sidebar.slider("Daily Quota per Staff", min_value=1, max_value=60, step=1, key="quota_limit")
 
 max_absent_staff = max(0, int(st.session_state.num_staff) - 1)
@@ -808,15 +830,19 @@ else:
 
 if st.session_state.scheduler_type == "WEIGHTED":
     st.sidebar.subheader("Weighted Priority")
-    st.sidebar.slider("Weight: urgency", min_value=0, max_value=100, step=1, key="w_urgency")
-    st.sidebar.slider("Weight: requester_type", min_value=0, max_value=100, step=1, key="w_requester")
-    st.sidebar.slider("Weight: waiting_time", min_value=0, max_value=100, step=1, key="w_waiting")
-    st.sidebar.slider("Weight: document_type", min_value=0, max_value=100, step=1, key="w_document")
+    for key in CRITERIA_KEYS:
+        st.sidebar.slider(
+            f"Weight: {format_criterion_label(key)}",
+            min_value=0,
+            max_value=100,
+            step=1,
+            key=weight_state_key(key),
+        )
 
     current_weights = normalized_weights_from_ui()
     st.sidebar.caption(
         "Normalized: "
-        + ", ".join(f"{k}={v:.2f}" for k, v in current_weights.items())
+        + ", ".join(f"{format_criterion_label(k)}={v:.2f}" for k, v in current_weights.items())
     )
     st.sidebar.info("Tie-break rule: earlier submission_time wins when scores are equal.")
 
@@ -971,9 +997,17 @@ else:
             }
         )
 
+    assigned_request_ids = {
+        assignment.get("Request")
+        for assignment in frame_data["assignments"]
+        if assignment.get("Request")
+    }
+
     waiting_rows = []
     for waiting_item in frame_data["waiting"]:
         request_id = waiting_item.get("Request")
+        if request_id in assigned_request_ids:
+            continue
         request_meta = request_lookup.get(request_id, {})
         event_time_raw = waiting_item.get("Time")
         waiting_rows.append(
@@ -1355,8 +1389,9 @@ else:
                 "Request": req.request_id,
                 "College": req.college,
                 "Document": req.document_type,
-                "Urgency": req.urgency,
-                "Requester": req.requester_type,
+                "Completeness": round(float(getattr(req, "completeness_of_requirements", 0.0)), 2),
+                "Requester Status": getattr(req, "requester_type", "-"),
+                "Payment Status": getattr(req, "payment_status", "-"),
                 "Priority Score": round(float(getattr(req, "priority_score", 0.0)), 4),
                 "Queue Wait (h)": round(req.get_waiting_time_minutes() / 60.0, 2),
                 "Turnaround (d)": round(req.get_turnaround_time_minutes() / 1440.0, 2),
@@ -1384,13 +1419,32 @@ else:
         st.write(f"**Request ID:** {selected_req.request_id}")
         st.write(f"**College:** {selected_req.college}")
         st.write(f"**Document Type:** {selected_req.document_type}")
-        st.write(f"**Urgency:** {selected_req.urgency}/10")
-        st.write(f"**Requester Type:** {selected_req.requester_type}")
+        st.write(
+            f"**Completeness:** {float(getattr(selected_req, 'completeness_of_requirements', 0.0)):.2f}"
+        )
+        st.write(f"**Requester Status:** {getattr(selected_req, 'requester_type', '-')}")
+        st.write(f"**Payment Status:** {getattr(selected_req, 'payment_status', '-')}")
         st.write(f"**Priority Score:** {float(getattr(selected_req, 'priority_score', 0.0)):.4f}")
         st.write(f"**Assigned Staff:** {format_staff_label(selected_req.assigned_staff, staff_college_map)}")
 
     with d2:
         st.write(f"**Submission:** {format_compact_datetime(selected_req.submission_time)}")
+        st.write(
+            "**Requirements Partial:** "
+            f"{format_compact_datetime(getattr(selected_req, 'requirements_partial_time', None))}"
+        )
+        st.write(
+            "**Requirements Complete:** "
+            f"{format_compact_datetime(getattr(selected_req, 'requirements_complete_time', None))}"
+        )
+        st.write(
+            "**Payment Time:** "
+            f"{format_compact_datetime(getattr(selected_req, 'payment_time', None))}"
+        )
+        st.write(
+            "**Ready Time:** "
+            f"{format_compact_datetime(getattr(selected_req, 'ready_time', None))}"
+        )
         st.write(f"**Assignment:** {format_compact_datetime(selected_req.assignment_time)}")
         st.write(f"**Completion:** {format_compact_datetime(selected_req.completion_time)}")
         st.write(f"**Queue Wait:** {selected_req.get_waiting_time_minutes() / 60.0:.2f} h")
@@ -1563,8 +1617,12 @@ if engine.completed:
                 "request_id": req.request_id,
                 "college": req.college,
                 "document_type": req.document_type,
-                "urgency": req.urgency,
-                "requester_type": req.requester_type,
+                "requester_status": getattr(req, "requester_type", "-"),
+                "completeness_of_requirements": round(
+                    float(getattr(req, "completeness_of_requirements", 0.0)),
+                    4,
+                ),
+                "payment_status": getattr(req, "payment_status", "-"),
                 "submission_time": req.submission_time.isoformat(),
                 "assignment_time": req.assignment_time.isoformat() if req.assignment_time else None,
                 "completion_time": req.completion_time.isoformat() if req.completion_time else None,

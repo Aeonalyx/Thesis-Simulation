@@ -46,6 +46,7 @@ REQUESTER_PRIORITY = {
     "Alumni": 5,
     "Regular Student": 3,
 }
+REQUESTER_PRIORITY_MAX = max(REQUESTER_PRIORITY.values()) if REQUESTER_PRIORITY else 1
 
 DOCUMENT_COMPLEXITY = {
     "Transcript of Records": 3,
@@ -54,16 +55,39 @@ DOCUMENT_COMPLEXITY = {
     "Certification": 1,
 }
 
-COLLEGES = ["COE", "CAS", "CBA", "CEGE", "CS", "IE"]
+COLLEGES = ["COE", "CASS", "CCS", "CSM", "CED", "CHS", "CEBA"]
 
 COLLEGE_POPULATION = {
-    "COE": 0.25,
-    "CAS": 0.25,
-    "CBA": 0.18,
-    "CEGE": 0.15,
-    "CS": 0.12,
-    "IE": 0.05,
+    "COE": 1 / 7,
+    "CASS": 1 / 7,
+    "CCS": 1 / 7,
+    "CSM": 1 / 7,
+    "CED": 1 / 7,
+    "CHS": 1 / 7,
+    "CEBA": 1 / 7,
 }
+
+COMPLETENESS_LEVELS = {
+    "incomplete": 0.3,
+    "partial": 0.7,
+    "complete": 1.0,
+}
+REQUIREMENTS_PARTIAL_DELAY_HOURS_RANGE = (0.0, 6.0)
+REQUIREMENTS_COMPLETE_EXTRA_DELAY_HOURS_RANGE = (2.0, 24.0)
+PAYMENT_DELAY_HOURS_RANGE = (0.0, 48.0)
+
+
+def _build_college_priority() -> Dict[str, float]:
+    raw: Dict[str, float] = {}
+    for college in COLLEGES:
+        population = float(COLLEGE_POPULATION.get(college, 0.0))
+        population = max(population, 0.01)
+        raw[college] = 1.0 / population
+    max_score = max(raw.values()) if raw else 1.0
+    return {college: score / max_score for college, score in raw.items()}
+
+
+COLLEGE_PRIORITY = _build_college_priority()
 
 
 # ============================================================================
@@ -78,6 +102,13 @@ class DocumentRequest:
     urgency: int
     requester_type: str
     submission_time: datetime
+    completeness_of_requirements: float = 1.0
+    payment_status: str = "Paid"
+    requirements_stage: str = "complete"
+    requirements_partial_time: Optional[datetime] = None
+    requirements_complete_time: Optional[datetime] = None
+    payment_time: Optional[datetime] = None
+    ready_time: Optional[datetime] = None
 
     priority_score: float = 0.0
     assignment_time: Optional[datetime] = None
@@ -91,25 +122,64 @@ class DocumentRequest:
         workday_minutes: int,
     ) -> float:
         """Compute weighted priority score for this request at current_time."""
-        urgency_norm = self.urgency / 10.0
-        requester_norm = REQUESTER_PRIORITY.get(self.requester_type, 3) / 10.0
+        self.update_status(current_time)
+        completeness_norm = max(0.0, min(float(self.completeness_of_requirements), 1.0))
+
+        requester_raw = REQUESTER_PRIORITY.get(self.requester_type, 3)
+        requester_norm = requester_raw / max(float(REQUESTER_PRIORITY_MAX), 1.0)
 
         waiting_minutes = max(
             0.0,
             (current_time - self.submission_time).total_seconds() / 60.0,
         )
-        waiting_norm = min(waiting_minutes / max(float(workday_minutes * 2), 1.0), 1.0)
+        submission_norm = min(waiting_minutes / max(float(workday_minutes * 2), 1.0), 1.0)
 
         complexity = float(DOCUMENT_COMPLEXITY.get(self.document_type, 1))
         doc_norm = 1.0 / complexity
 
-        self.priority_score = (
-            weights.get("urgency", 0.0) * urgency_norm
-            + weights.get("requester_type", 0.0) * requester_norm
-            + weights.get("waiting_time", 0.0) * waiting_norm
-            + weights.get("document_type", 0.0) * doc_norm
-        )
+        college_norm = float(COLLEGE_PRIORITY.get(self.college, 0.5))
+
+        payment_norm = 0.0
+        if isinstance(self.payment_status, str):
+            status_text = self.payment_status.strip().lower()
+            if status_text in {"paid", "settled", "complete", "cleared", "yes", "y", "true", "1"}:
+                payment_norm = 1.0
+        else:
+            payment_norm = 1.0 if bool(self.payment_status) else 0.0
+
+        scores = {
+            "completeness_of_requirements": completeness_norm,
+            "submission_time": submission_norm,
+            "document_type": doc_norm,
+            "requester_status": requester_norm,
+            "college_affiliation": college_norm,
+            "payment_status": payment_norm,
+        }
+
+        total_score = 0.0
+        for key, weight in weights.items():
+            total_score += float(weight) * scores.get(key, 0.0)
+
+        self.priority_score = total_score
         return self.priority_score
+
+    def _requirements_stage_at(self, current_time: datetime) -> str:
+        if self.requirements_partial_time and current_time < self.requirements_partial_time:
+            return "incomplete"
+        if self.requirements_complete_time and current_time < self.requirements_complete_time:
+            return "partial"
+        return "complete"
+
+    def _payment_status_at(self, current_time: datetime) -> str:
+        if self.payment_time is None:
+            return self.payment_status
+        return "Paid" if current_time >= self.payment_time else "Unpaid"
+
+    def update_status(self, current_time: datetime):
+        stage = self._requirements_stage_at(current_time)
+        self.requirements_stage = stage
+        self.completeness_of_requirements = float(COMPLETENESS_LEVELS.get(stage, 1.0))
+        self.payment_status = self._payment_status_at(current_time)
 
     def get_waiting_time_minutes(self) -> float:
         if self.assignment_time is None:
@@ -128,6 +198,18 @@ class DocumentRequest:
             "document_type": self.document_type,
             "urgency": self.urgency,
             "requester_type": self.requester_type,
+            "requester_status": self.requester_type,
+            "completeness_of_requirements": round(float(self.completeness_of_requirements), 4),
+            "requirements_stage": self.requirements_stage,
+            "payment_status": self.payment_status,
+            "requirements_partial_time": self.requirements_partial_time.isoformat()
+            if self.requirements_partial_time
+            else None,
+            "requirements_complete_time": self.requirements_complete_time.isoformat()
+            if self.requirements_complete_time
+            else None,
+            "payment_time": self.payment_time.isoformat() if self.payment_time else None,
+            "ready_time": self.ready_time.isoformat() if self.ready_time else None,
             "submission_time": self.submission_time.isoformat(),
             "priority_score": round(self.priority_score, 4),
             "assignment_time": self.assignment_time.isoformat() if self.assignment_time else None,
@@ -319,7 +401,7 @@ class SimulationEngine:
     # ---------------------------------------------------------------------
 
     def _normalize_weights(self, weights: Dict[str, float]) -> Dict[str, float]:
-        keys = ["urgency", "requester_type", "waiting_time", "document_type"]
+        keys = list(PRIORITY_WEIGHTS.keys())
         clean: Dict[str, float] = {}
         for key in keys:
             raw = float(weights.get(key, 0.0))
@@ -329,19 +411,32 @@ class SimulationEngine:
             return PRIORITY_WEIGHTS.copy()
         return {k: v / total for k, v in clean.items()}
 
+    def _is_request_ready(self, request: DocumentRequest, current_time: datetime) -> bool:
+        request.update_status(current_time)
+        if request.ready_time is None:
+            return True
+        return current_time >= request.ready_time
+
     def _generate_staff_pool(self, num_staff: int, quota_limit: int) -> List[StaffMember]:
         names = [
-            "Maria Santos",
-            "Juan Dela Cruz",
-            "Ana Reyes",
-            "Carlos Lim",
-            "Luisa Gomez",
-            "Ramon Aquino",
-            "Elena Cruz",
-            "Miguel Torres",
+            "Marco",
+            "Liza",
+            "Paolo",
+            "Nina",
+            "Carlo",
+            "Ana",
+            "Ramon",
+            "Elena",
+            "Miguel",
+            "Sara",
+            "Leo",
+            "Jade",
+            "Ivan",
+            "Karla",
         ]
 
-        count = max(1, min(int(num_staff), len(COLLEGES)))
+        max_staff = max(len(COLLEGES) * 2, 1)
+        count = max(1, min(int(num_staff), max_staff))
         quota = max(1, int(quota_limit))
 
         pool = []
@@ -350,7 +445,7 @@ class SimulationEngine:
                 StaffMember(
                     staff_id=f"STAFF{index + 1:03d}",
                     name=names[index % len(names)],
-                    college_affiliation=COLLEGES[index],
+                    college_affiliation=COLLEGES[index % len(COLLEGES)],
                     quota_limit=quota,
                 )
             )
@@ -476,17 +571,28 @@ class SimulationEngine:
                 college = self.rng.choices(colleges, weights=weights, k=1)[0]
                 document_type = self.rng.choice(document_types)
                 requester_type = self.rng.choices(requester_types, weights=requester_weights, k=1)[0]
+                partial_delay_hours = self.rng.uniform(*REQUIREMENTS_PARTIAL_DELAY_HOURS_RANGE)
+                complete_extra_hours = self.rng.uniform(*REQUIREMENTS_COMPLETE_EXTRA_DELAY_HOURS_RANGE)
+                requirements_partial_time = submission_time + timedelta(hours=partial_delay_hours)
+                requirements_complete_time = requirements_partial_time + timedelta(hours=complete_extra_hours)
+                payment_delay_hours = self.rng.uniform(*PAYMENT_DELAY_HOURS_RANGE)
+                payment_time = submission_time + timedelta(hours=payment_delay_hours)
+                ready_time = max(requirements_complete_time, payment_time)
 
-                requests.append(
-                    DocumentRequest(
-                        request_id=f"REQ{request_counter:04d}",
-                        college=college,
-                        document_type=document_type,
-                        urgency=_next_urgency(),
-                        requester_type=requester_type,
-                        submission_time=submission_time,
-                    )
+                request = DocumentRequest(
+                    request_id=f"REQ{request_counter:04d}",
+                    college=college,
+                    document_type=document_type,
+                    urgency=_next_urgency(),
+                    requester_type=requester_type,
+                    submission_time=submission_time,
+                    requirements_partial_time=requirements_partial_time,
+                    requirements_complete_time=requirements_complete_time,
+                    payment_time=payment_time,
+                    ready_time=ready_time,
                 )
+                request.update_status(submission_time)
+                requests.append(request)
                 request_counter += 1
 
         _add_batch(morning_count, start_hour, bucket_1_end)
@@ -750,6 +856,7 @@ class SimulationEngine:
         assignment_time: datetime,
         assignment_mode: str,
     ):
+        request.update_status(assignment_time)
         processing_duration = self._processing_duration(request)
         completion_time = self._add_processing_with_work_hours(assignment_time, processing_duration)
 
@@ -790,30 +897,9 @@ class SimulationEngine:
     # ---------------------------------------------------------------------
 
     def _run_fcfs(self, requests: List[DocumentRequest]):
-        for req in requests:
-            self.scheduler.add_request(req)
-            self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_arrived")
-
-        sorted_requests = self.scheduler.get_all_sorted()
-
-        for req in sorted_requests:
-            selected = self._select_assignment(req, reference_time=req.submission_time)
-            if selected is None:
-                self.waiting_queue.append(req)
-                self._log_event(
-                    req.submission_time,
-                    "WAITING",
-                    request=req,
-                    details="no_eligible_staff",
-                )
-                continue
-
-            staff, assignment_time, mode = selected
-            self._assign_request(req, staff, assignment_time, mode)
-
-    def _run_weighted(self, requests: List[DocumentRequest]):
         arrivals = sorted(requests, key=lambda r: r.submission_time)
         pending: List[DocumentRequest] = []
+        not_ready: List[DocumentRequest] = []
         index = 0
 
         if arrivals:
@@ -823,19 +909,111 @@ class SimulationEngine:
 
         current_time = self._next_working_start(current_time)
 
-        while index < len(arrivals) or pending:
-            # If pending is empty, move to next arrival and add it.
-            if not pending and index < len(arrivals):
+        while index < len(arrivals) or pending or not_ready:
+            while index < len(arrivals) and arrivals[index].submission_time <= current_time:
+                req = arrivals[index]
+                self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_arrived")
+                if self._is_request_ready(req, current_time):
+                    pending.append(req)
+                else:
+                    not_ready.append(req)
+                    self._log_event(
+                        req.submission_time,
+                        "WAITING",
+                        request=req,
+                        details="pending_requirements_or_payment",
+                    )
+                index += 1
+
+            ready_now = [req for req in not_ready if self._is_request_ready(req, current_time)]
+            for req in ready_now:
+                not_ready.remove(req)
+                pending.append(req)
+
+            if not pending:
+                next_arrival_time = arrivals[index].submission_time if index < len(arrivals) else None
+                next_ready_time = min(
+                    (req.ready_time for req in not_ready if req.ready_time),
+                    default=None,
+                )
+                if next_arrival_time is None and next_ready_time is None:
+                    break
+                candidate_times = [t for t in [next_arrival_time, next_ready_time] if t is not None]
+                current_time = min(candidate_times)
+                current_time = self._next_working_start(current_time)
+                continue
+
+            next_req = min(
+                pending,
+                key=lambda r: (r.submission_time, r.ready_time or r.submission_time),
+            )
+            pending.remove(next_req)
+            reference_time = max(current_time, next_req.ready_time or next_req.submission_time)
+            selected = self._select_assignment(next_req, reference_time=reference_time)
+            if selected is None:
+                self.waiting_queue.append(next_req)
+                self._log_event(
+                    reference_time,
+                    "WAITING",
+                    request=next_req,
+                    details="no_eligible_staff",
+                )
+                continue
+
+            staff, assignment_time, mode = selected
+            self._assign_request(next_req, staff, assignment_time, mode)
+            current_time = max(current_time, assignment_time)
+
+    def _run_weighted(self, requests: List[DocumentRequest]):
+        arrivals = sorted(requests, key=lambda r: r.submission_time)
+        pending: List[DocumentRequest] = []
+        not_ready: List[DocumentRequest] = []
+        index = 0
+
+        if arrivals:
+            current_time = arrivals[0].submission_time
+        else:
+            current_time = self._day_start(self.start_time.date())
+
+        current_time = self._next_working_start(current_time)
+
+        while index < len(arrivals) or pending or not_ready:
+            if not pending and not_ready and index < len(arrivals):
                 current_time = max(current_time, arrivals[index].submission_time)
 
             while index < len(arrivals) and arrivals[index].submission_time <= current_time:
                 req = arrivals[index]
-                pending.append(req)
-                self.scheduler.add_request(req)
                 self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_arrived")
+                if self._is_request_ready(req, current_time):
+                    pending.append(req)
+                    self.scheduler.add_request(req)
+                else:
+                    not_ready.append(req)
+                    self._log_event(
+                        req.submission_time,
+                        "WAITING",
+                        request=req,
+                        details="pending_requirements_or_payment",
+                    )
                 index += 1
 
+            ready_now = [req for req in not_ready if self._is_request_ready(req, current_time)]
+            for req in ready_now:
+                not_ready.remove(req)
+                pending.append(req)
+                self.scheduler.add_request(req)
+
             if not pending:
+                next_arrival_time = arrivals[index].submission_time if index < len(arrivals) else None
+                next_ready_time = min(
+                    (req.ready_time for req in not_ready if req.ready_time),
+                    default=None,
+                )
+                if next_arrival_time is None and next_ready_time is None:
+                    break
+                candidate_times = [t for t in [next_arrival_time, next_ready_time] if t is not None]
+                current_time = min(candidate_times)
+                current_time = self._next_working_start(current_time)
                 continue
 
             ranked = self.scheduler.rank(
@@ -872,8 +1050,12 @@ class SimulationEngine:
                 self._assign_request(req, staff, assignment_time, mode)
                 continue
 
-            # Nothing assignable now. Advance to next event (arrival or future slot).
+            # Nothing assignable now. Advance to next event (arrival, readiness, or future slot).
             next_arrival_time = arrivals[index].submission_time if index < len(arrivals) else None
+            next_ready_time = min(
+                (req.ready_time for req in not_ready if req.ready_time),
+                default=None,
+            )
             next_slot_time: Optional[datetime] = None
 
             for req in ranked:
@@ -884,7 +1066,7 @@ class SimulationEngine:
                 if next_slot_time is None or slot_time < next_slot_time:
                     next_slot_time = slot_time
 
-            if next_arrival_time is None and next_slot_time is None:
+            if next_arrival_time is None and next_ready_time is None and next_slot_time is None:
                 # Remaining pending requests are impossible to route.
                 for req in pending:
                     self.scheduler.remove_request(req)
@@ -895,10 +1077,21 @@ class SimulationEngine:
                         request=req,
                         details="no_eligible_staff",
                     )
+                for req in not_ready:
+                    self.waiting_queue.append(req)
+                    self._log_event(
+                        current_time,
+                        "WAITING",
+                        request=req,
+                        details="pending_requirements_or_payment",
+                    )
                 pending.clear()
+                not_ready.clear()
                 break
 
-            candidate_times = [t for t in [next_arrival_time, next_slot_time] if t is not None]
+            candidate_times = [
+                t for t in [next_arrival_time, next_ready_time, next_slot_time] if t is not None
+            ]
             current_time = min(candidate_times)
             current_time = self._next_working_start(current_time)
 
