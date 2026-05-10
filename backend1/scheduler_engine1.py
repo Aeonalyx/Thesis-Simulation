@@ -14,7 +14,12 @@ from datetime import datetime, timedelta, date
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import random
-from backend1.roc_utils import PRIORITY_ROC_WEIGHTS
+try:
+    # Works when run from workspace root as a package
+    from backend1.roc_utils import PRIORITY_ROC_WEIGHTS
+except ImportError:
+    # Works when run directly from backend1/ as a script
+    from roc_utils import PRIORITY_ROC_WEIGHTS
 
 # ============================================================================
 # DEFAULT CONFIGURATION
