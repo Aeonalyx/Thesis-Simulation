@@ -50,6 +50,7 @@ This file summarizes recent changes so work can continue in another session.
 - Decide real delay ranges for requirement/payment per document type (from citizen's charter).
 - Optional: expose readiness delay ranges in frontend controls.
 - Optional: include readiness timestamps in exported CSV.
+- Add scenario function back, to alternate between periods (normal, after graduation(peak)) as it would affect the document type weights, (ex. during peak periods, TOR and certificate are more likely requested)
 
 ## Notes
 - Urgency still exists for request generation but is not part of ROC scoring.
