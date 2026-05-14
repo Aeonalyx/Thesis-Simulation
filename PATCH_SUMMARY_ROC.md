@@ -69,3 +69,7 @@ from backend1.roc_utils import PRIORITY_ROC_WEIGHTS
 ## Next Steps
 - To add new criteria, update `priority_criteria_ranking` and extend normalization logic in your scoring function.
 - Remove any unused individual weight variables if not needed.
+
+
+## TO DOs
+- Finalize requester status and scoring, fix staffing tables, make queue list priority score adaptive to changes overtime, Finalize College scores as per group discussion.
