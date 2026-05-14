@@ -13,6 +13,7 @@ Implements:
 from datetime import datetime, timedelta, date
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
+import re
 import random
 try:
     # Works when run from workspace root as a package
@@ -48,11 +49,21 @@ REQUESTER_PRIORITY = {
 }
 REQUESTER_PRIORITY_MAX = max(REQUESTER_PRIORITY.values()) if REQUESTER_PRIORITY else 1
 
+# Durations can be workdays (number) or strings like "2 day" / "18 hour".
 DOCUMENT_COMPLEXITY = {
-    "Transcript of Records": 3,
-    "Certificate of Enrollment": 2,
-    "Honorable Dismissal": 4,
-    "Certification": 1,
+    "Certification, Authentication and Verification (CAV)": "3 days",
+    "Official Transcript of Records (TOR) and Transfer Credentials (TC)": "3 days",
+    "Certification": "1 day",
+    "Diploma": "4 hours",
+    "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)": "4 hours",
+    "Authentication": "4 hours",
+    "Academic Load Revision (ALRP)": "1 hour",
+    "Grading Sheets": "1 day",
+    "Shifter’s Form, Returnee’s Form or Leave of Absence": "1 day",
+    "Completion Forms": "1 day",
+    "Advance Credit": "1 day",
+    "Permit to Cross-Enrol": "1 hour",
+    "Registration of Old and Returnee Students": "1 hour",
 }
 
 COLLEGES = ["COE", "CASS", "CCS", "CSM", "CED", "CHS", "CEBA"]
@@ -72,8 +83,8 @@ COMPLETENESS_LEVELS = {
     "partial": 0.7,
     "complete": 1.0,
 }
-REQUIREMENTS_PARTIAL_DELAY_HOURS_RANGE = (0.0, 6.0)
-REQUIREMENTS_COMPLETE_EXTRA_DELAY_HOURS_RANGE = (2.0, 24.0)
+REQUIREMENTS_PARTIAL_DELAY_HOURS_RANGE = (0.0, 0.3)
+REQUIREMENTS_COMPLETE_EXTRA_DELAY_HOURS_RANGE = (.3, 4.0)
 PAYMENT_DELAY_HOURS_RANGE = (0.0, 48.0)
 
 
@@ -88,6 +99,24 @@ def _build_college_priority() -> Dict[str, float]:
 
 
 COLLEGE_PRIORITY = _build_college_priority()
+
+_DURATION_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(day|days|hour|hours)\s*$", re.IGNORECASE)
+
+
+def _duration_to_schedule(value: object) -> Tuple[timedelta, bool]:
+    """Return (duration, use_work_hours). Days use calendar time; hours use work hours."""
+    if isinstance(value, (int, float)):
+        return timedelta(days=float(value)), False
+    if not isinstance(value, str):
+        return timedelta(days=1.0), False
+    match = _DURATION_PATTERN.match(value)
+    if not match:
+        return timedelta(days=1.0), False
+    amount = float(match.group(1))
+    unit = match.group(2).lower()
+    if unit.startswith("day"):
+        return timedelta(days=amount), False
+    return timedelta(hours=amount), True
 
 
 # ============================================================================
@@ -134,8 +163,11 @@ class DocumentRequest:
         )
         submission_norm = min(waiting_minutes / max(float(workday_minutes * 2), 1.0), 1.0)
 
-        complexity = float(DOCUMENT_COMPLEXITY.get(self.document_type, 1))
-        doc_norm = 1.0 / complexity
+        base_duration, _ = _duration_to_schedule(
+            DOCUMENT_COMPLEXITY.get(self.document_type, 1)
+        )
+        complexity_days = max(base_duration.total_seconds() / 86400.0, 1e-6)
+        doc_norm = min(1.0 / complexity_days, 1.0)
 
         college_norm = float(COLLEGE_PRIORITY.get(self.college, 0.5))
 
@@ -160,7 +192,7 @@ class DocumentRequest:
         for key, weight in weights.items():
             total_score += float(weight) * scores.get(key, 0.0)
 
-        self.priority_score = total_score
+        self.priority_score = max(0.0, min(total_score, 1.0))
         return self.priority_score
 
     def _requirements_stage_at(self, current_time: datetime) -> str:
@@ -842,12 +874,17 @@ class SimulationEngine:
     # Assignment + processing helpers
     # ---------------------------------------------------------------------
 
-    def _processing_duration(self, request: DocumentRequest) -> timedelta:
-        base_workdays = float(DOCUMENT_COMPLEXITY.get(request.document_type, 1))
-        per_request_rng = random.Random(f"{self.random_seed}:{request.request_id}:proc")
-        multiplier = per_request_rng.uniform(0.8, 1.2)
-        processing_hours = base_workdays * (self.workday_minutes / 60.0) * multiplier
-        return timedelta(hours=processing_hours)
+    def _processing_duration(self, request: DocumentRequest) -> Tuple[timedelta, bool]:
+        base_duration, use_work_hours = _duration_to_schedule(
+            DOCUMENT_COMPLEXITY.get(request.document_type, 1)
+        )
+        if use_work_hours:
+            per_request_rng = random.Random(f"{self.random_seed}:{request.request_id}:proc")
+            multiplier = per_request_rng.uniform(0.8, 1.2)
+        else:
+            multiplier = 1.0
+        scaled = timedelta(seconds=base_duration.total_seconds() * multiplier)
+        return scaled, use_work_hours
 
     def _assign_request(
         self,
@@ -857,8 +894,11 @@ class SimulationEngine:
         assignment_mode: str,
     ):
         request.update_status(assignment_time)
-        processing_duration = self._processing_duration(request)
-        completion_time = self._add_processing_with_work_hours(assignment_time, processing_duration)
+        processing_duration, use_work_hours = self._processing_duration(request)
+        if use_work_hours:
+            completion_time = self._add_processing_with_work_hours(assignment_time, processing_duration)
+        else:
+            completion_time = assignment_time + processing_duration
 
         request.assignment_time = assignment_time
         request.completion_time = completion_time

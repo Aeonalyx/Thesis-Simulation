@@ -28,7 +28,12 @@ from backend1.scheduler_engine1 import (  # noqa: E402
     COLLEGES,
     DOCUMENT_COMPLEXITY,
     PRIORITY_WEIGHTS,
+    COLLEGE_PRIORITY,
+    COMPLETENESS_LEVELS,
+    REQUESTER_PRIORITY,
+    REQUESTER_PRIORITY_MAX,
     SimulationEngine,
+    _duration_to_schedule,
 )
 
 
@@ -347,7 +352,10 @@ SPEED_OPTIONS = {
     "0.50x": 0.80,
     "1.00x": 0.45,
     "2.00x": 0.20,
-    "4.00x": 0.10,
+    "4.00x": 0.08,
+    "8.00x": 0.05,
+    "16.00x": 0.03,
+    "Smooth": 0.025,
 }
 
 WEIGHT_DEFAULT_STATE = {
@@ -1449,6 +1457,57 @@ else:
         st.write(f"**Completion:** {format_compact_datetime(selected_req.completion_time)}")
         st.write(f"**Queue Wait:** {selected_req.get_waiting_time_minutes() / 60.0:.2f} h")
         st.write(f"**Turnaround:** {selected_req.get_turnaround_time_minutes() / 1440.0:.2f} d")
+
+    st.subheader("Priority Score Progression")
+
+    def _score_at(request_obj: DocumentRequest, at_time: Optional[datetime]) -> Optional[float]:
+        if at_time is None:
+            return None
+        original_state = (
+            request_obj.completeness_of_requirements,
+            request_obj.payment_status,
+            request_obj.requirements_stage,
+            request_obj.priority_score,
+        )
+        try:
+            return request_obj.calculate_priority(
+                at_time,
+                engine.priority_weights,
+                engine.workday_minutes,
+            )
+        finally:
+            (
+                request_obj.completeness_of_requirements,
+                request_obj.payment_status,
+                request_obj.requirements_stage,
+                request_obj.priority_score,
+            ) = original_state
+
+    stage_points = [
+        ("Submitted", selected_req.submission_time),
+        ("Requirements Partial", getattr(selected_req, "requirements_partial_time", None)),
+        ("Requirements Complete", getattr(selected_req, "requirements_complete_time", None)),
+        ("Payment", getattr(selected_req, "payment_time", None)),
+        ("Ready", getattr(selected_req, "ready_time", None)),
+        ("Assigned", selected_req.assignment_time),
+    ]
+    stage_rows = []
+    for label, ts in stage_points:
+        if ts is None:
+            continue
+        score_value = _score_at(selected_req, ts)
+        stage_rows.append(
+            {
+                "Stage": label,
+                "Time": format_compact_datetime(ts),
+                "Priority Score": round(float(score_value or 0.0), 4),
+            }
+        )
+    if stage_rows:
+        stage_df = pd.DataFrame(stage_rows)
+        render_theme_table(stage_df, height_px=220)
+    else:
+        st.write("No stage timestamps available.")
 
     st.subheader("Request Lifecycle Timeline")
 
