@@ -41,13 +41,21 @@ PRIORITY_WEIGHTS = PRIORITY_ROC_WEIGHTS
 # }
 
 REQUESTER_PRIORITY = {
-    "Graduating Student": 10,
-    "Enrolling Student": 8,
-    "Faculty": 7,
-    "Alumni": 5,
-    "Regular Student": 3,
+    "Graduating Student": 1,
+    "Faculty": 1,
+    "Alumni": 1,
+    "Regular Student": 1,
+}
+REQUESTER_GENERATION_WEIGHTS = {
+    "Regular Student": 0.55,
+    "Graduating Student": 0.20,
+    "Alumni": 0.15,
+    "Faculty": 0.10,
 }
 REQUESTER_PRIORITY_MAX = max(REQUESTER_PRIORITY.values()) if REQUESTER_PRIORITY else 1
+
+# Controls the final priority score soft-cap (lower raises scores faster).
+PRIORITY_SCORE_HALF_LIFE = 0.15
 
 # Durations can be workdays (number) or strings like "2 day" / "18 hour".
 DOCUMENT_COMPLEXITY = {
@@ -56,14 +64,37 @@ DOCUMENT_COMPLEXITY = {
     "Certification": "1 day",
     "Diploma": "4 hours",
     "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)": "4 hours",
+    "Permit to Cross-Enrol": "1 hour",
     "Authentication": "4 hours",
     "Academic Load Revision (ALRP)": "1 hour",
     "Grading Sheets": "1 day",
     "Shifter’s Form, Returnee’s Form or Leave of Absence": "1 day",
     "Completion Forms": "1 day",
     "Advance Credit": "1 day",
-    "Permit to Cross-Enrol": "1 hour",
     "Registration of Old and Returnee Students": "1 hour",
+}
+
+DOCUMENT_REQUESTER_RESTRICTIONS = {
+    "Certification, Authentication and Verification (CAV)": ["Graduating Student", "Alumni"],
+    "Official Transcript of Records (TOR) and Transfer Credentials (TC)": ["Alumni"],
+    "Certification": ["Alumni"],
+    "Diploma": ["Alumni"],
+    "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)": [
+        "Graduating Student",
+        "Alumni",
+        "Regular Student",
+    ],
+    "Permit to Cross-Enrol": ["Graduating Student", "Alumni", "Regular Student"],
+    "Authentication": ["Graduating Student", "Alumni", "Regular Student"],
+    "Academic Load Revision (ALRP)": ["Regular Student"],
+    "Grading Sheets": ["Faculty"],
+    "Shifter’s Form, Returnee’s Form or Leave of Absence": ["Regular Student"],
+    "Completion Forms": ["Faculty"],
+    "Registration of Old and Returnee Students": ["Regular Student"],
+}
+
+DOCUMENT_PAYMENT_REQUIRED = {
+    "Grading Sheets": False,
 }
 
 COLLEGES = ["COE", "CASS", "CCS", "CSM", "CED", "CHS", "CEBA"]
@@ -83,9 +114,9 @@ COMPLETENESS_LEVELS = {
     "partial": 0.7,
     "complete": 1.0,
 }
-REQUIREMENTS_PARTIAL_DELAY_HOURS_RANGE = (0.0, 0.3)
-REQUIREMENTS_COMPLETE_EXTRA_DELAY_HOURS_RANGE = (.3, 4.0)
-PAYMENT_DELAY_HOURS_RANGE = (0.0, 48.0)
+REQUIREMENTS_PARTIAL_DELAY_HOURS_RANGE = (0.0, 0.2) # up to 12 minutes for partial requirements
+REQUIREMENTS_COMPLETE_EXTRA_DELAY_HOURS_RANGE = (0.0, 1.0) # up to 1 hour after partial for complete requirements
+PAYMENT_DELAY_HOURS_RANGE = (0.0, 48.0) # up to 2 days for payment after submission (if required)
 
 
 def _build_college_priority() -> Dict[str, float]:
@@ -101,6 +132,12 @@ def _build_college_priority() -> Dict[str, float]:
 COLLEGE_PRIORITY = _build_college_priority()
 
 _DURATION_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(day|days|hour|hours)\s*$", re.IGNORECASE)
+
+
+def _soft_cap(value: float, half_life: float) -> float:
+    """Smoothly compress toward 1.0 as value grows; equals 0.5 at half_life."""
+    safe_half_life = max(float(half_life), 1e-6)
+    return float(value) / (float(value) + safe_half_life)
 
 
 def _duration_to_schedule(value: object) -> Tuple[timedelta, bool]:
@@ -161,13 +198,13 @@ class DocumentRequest:
             0.0,
             (current_time - self.submission_time).total_seconds() / 60.0,
         )
-        submission_norm = min(waiting_minutes / max(float(workday_minutes * 2), 1.0), 1.0)
+        submission_norm = _soft_cap(waiting_minutes, max(float(workday_minutes * 2), 1.0))
 
         base_duration, _ = _duration_to_schedule(
             DOCUMENT_COMPLEXITY.get(self.document_type, 1)
         )
         complexity_days = max(base_duration.total_seconds() / 86400.0, 1e-6)
-        doc_norm = min(1.0 / complexity_days, 1.0)
+        doc_norm = 1.0 / (1.0 + complexity_days)
 
         college_norm = float(COLLEGE_PRIORITY.get(self.college, 0.5))
 
@@ -192,7 +229,7 @@ class DocumentRequest:
         for key, weight in weights.items():
             total_score += float(weight) * scores.get(key, 0.0)
 
-        self.priority_score = max(0.0, min(total_score, 1.0))
+        self.priority_score = _soft_cap(total_score, PRIORITY_SCORE_HALF_LIFE)
         return self.priority_score
 
     def _requirements_stage_at(self, current_time: datetime) -> str:
@@ -570,7 +607,12 @@ class SimulationEngine:
             weights = [w / total_weight for w in weights]
 
         requester_types = list(REQUESTER_PRIORITY.keys())
-        requester_weights = [0.22, 0.20, 0.10, 0.08, 0.40]
+        requester_weights = [
+            float(REQUESTER_GENERATION_WEIGHTS.get(requester, 0.0))
+            for requester in requester_types
+        ]
+        if sum(requester_weights) <= 0:
+            requester_weights = [1.0] * len(requester_types)
         document_types = list(DOCUMENT_COMPLEXITY.keys())
 
         morning_count = int(total_requests * 0.60)
@@ -602,14 +644,31 @@ class SimulationEngine:
                 submission_time = self.start_time + timedelta(hours=submission_offset_hours)
                 college = self.rng.choices(colleges, weights=weights, k=1)[0]
                 document_type = self.rng.choice(document_types)
-                requester_type = self.rng.choices(requester_types, weights=requester_weights, k=1)[0]
+                allowed_requesters = DOCUMENT_REQUESTER_RESTRICTIONS.get(document_type)
+                if allowed_requesters:
+                    allowed = [r for r in requester_types if r in allowed_requesters]
+                    if allowed:
+                        requester_type = self.rng.choice(allowed)
+                    else:
+                        requester_type = self.rng.choices(
+                            requester_types, weights=requester_weights, k=1
+                        )[0]
+                else:
+                    requester_type = self.rng.choices(requester_types, weights=requester_weights, k=1)[0]
                 partial_delay_hours = self.rng.uniform(*REQUIREMENTS_PARTIAL_DELAY_HOURS_RANGE)
                 complete_extra_hours = self.rng.uniform(*REQUIREMENTS_COMPLETE_EXTRA_DELAY_HOURS_RANGE)
                 requirements_partial_time = submission_time + timedelta(hours=partial_delay_hours)
                 requirements_complete_time = requirements_partial_time + timedelta(hours=complete_extra_hours)
-                payment_delay_hours = self.rng.uniform(*PAYMENT_DELAY_HOURS_RANGE)
-                payment_time = submission_time + timedelta(hours=payment_delay_hours)
-                ready_time = max(requirements_complete_time, payment_time)
+                payment_required = DOCUMENT_PAYMENT_REQUIRED.get(document_type, True)
+                if payment_required:
+                    payment_delay_hours = self.rng.uniform(*PAYMENT_DELAY_HOURS_RANGE)
+                    payment_time = submission_time + timedelta(hours=payment_delay_hours)
+                    ready_time = max(requirements_complete_time, payment_time)
+                    payment_status = "Paid"
+                else:
+                    payment_time = None
+                    ready_time = requirements_complete_time
+                    payment_status = "Paid"
 
                 request = DocumentRequest(
                     request_id=f"REQ{request_counter:04d}",
@@ -622,6 +681,7 @@ class SimulationEngine:
                     requirements_complete_time=requirements_complete_time,
                     payment_time=payment_time,
                     ready_time=ready_time,
+                    payment_status=payment_status,
                 )
                 request.update_status(submission_time)
                 requests.append(request)

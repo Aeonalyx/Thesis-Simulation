@@ -32,6 +32,7 @@ from backend1.scheduler_engine1 import (  # noqa: E402
     COMPLETENESS_LEVELS,
     REQUESTER_PRIORITY,
     REQUESTER_PRIORITY_MAX,
+    DocumentRequest,
     SimulationEngine,
     _duration_to_schedule,
 )
@@ -591,9 +592,9 @@ def format_staff_label(staff_id: Optional[str], staff_map: Dict[str, Dict[str, s
     if staff_text.upper() == "UNASSIGNED":
         return "UNASSIGNED"
     meta = staff_map.get(staff_text, {})
-    name = str(meta.get("name", "")).strip()
-    if name:
-        return f"{staff_text} ({name})"
+    college = str(meta.get("college", "")).strip()
+    if college:
+        return f"{staff_text} ({college})"
     return staff_text
 
 
