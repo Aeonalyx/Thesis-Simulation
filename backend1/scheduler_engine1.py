@@ -46,11 +46,14 @@ REQUESTER_PRIORITY = {
     "Alumni": 1,
     "Regular Student": 1,
 }
+
+# Not made to match data from Student Population 2025-2026 Semester 2 from OUR, slightly adjusted
+
 REQUESTER_GENERATION_WEIGHTS = {
-    "Regular Student": 0.55,
-    "Graduating Student": 0.20,
-    "Alumni": 0.15,
-    "Faculty": 0.10,
+    "Regular Student": 0.65,
+    "Graduating Student": 0.18,
+    "Alumni": 0.10,
+    "Faculty": 0.07,
 }
 REQUESTER_PRIORITY_MAX = max(REQUESTER_PRIORITY.values()) if REQUESTER_PRIORITY else 1
 
@@ -97,16 +100,25 @@ DOCUMENT_PAYMENT_REQUIRED = {
     "Grading Sheets": False,
 }
 
-COLLEGES = ["COE", "CASS", "CCS", "CSM", "CED", "CHS", "CEBA"]
+COLLEGES = ["COE", "CED", "CASS", "CSM", "CEBA", "CCS", "CHS"]
+
+# COE 3236
+# CED 2533
+# CASS 2515
+# CSM 2047
+# CEBA 1296
+# CCS 1037
+# CHS 520
+# Total = 13,184, 13881 if including other colleges as per Student Population 2025-2026 Semester 2 from OUR
 
 COLLEGE_POPULATION = {
-    "COE": 1 / 7,
-    "CASS": 1 / 7,
-    "CCS": 1 / 7,
-    "CSM": 1 / 7,
-    "CED": 1 / 7,
-    "CHS": 1 / 7,
-    "CEBA": 1 / 7,
+    "COE": 0.2454,
+    "CED": 0.1921,
+    "CASS": 0.1908,
+    "CSM": 0.1553,
+    "CEBA": 0.0983,
+    "CCS": 0.0787,
+    "CHS": 0.0394,
 }
 
 COMPLETENESS_LEVELS = {
