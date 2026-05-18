@@ -73,3 +73,7 @@ from backend1.roc_utils import PRIORITY_ROC_WEIGHTS
 
 ## TO DOs
 - Finalize requester status and scoring, fix staffing tables, make queue list priority score adaptive to changes overtime, Finalize College scores as per group discussion.
+
+
+## Done after todos
+ - finalized requester types with equal scoring, added generate weights for requesters and document restrictions as per citizen's charter, fix minor frontend/table designs.
