@@ -372,7 +372,6 @@ DEFAULT_STATE = {
     "quota_limit": 20,
     "enable_absence": False,
     "total_requests": 200,
-    "urgency_base": 5,
     "imbalance_factor": 0,
     "num_absent_staff": 0,
     "work_start_time": time(8, 0),
@@ -384,6 +383,7 @@ DEFAULT_STATE = {
     "playback_frame_ui": 1,
     "playback_speed": "1.00x",
     "playback_playing": False,
+    "urgency": False,
 }
 
 
@@ -426,7 +426,7 @@ def collect_ui_config() -> Dict:
         "quota_limit": int(st.session_state.quota_limit),
         "enable_absence": bool(st.session_state.enable_absence),
         "total_requests": int(st.session_state.total_requests),
-        "urgency_base": int(st.session_state.urgency_base),
+        "urgency": bool(st.session_state.urgency),
         "imbalance_factor": int(st.session_state.imbalance_factor),
         "num_absent_staff": int(st.session_state.num_absent_staff),
         "work_start": st.session_state.work_start_time.strftime("%H:%M"),
@@ -454,7 +454,7 @@ def apply_ui_config(config: Dict):
     st.session_state.enable_absence = bool(enable_absence)
 
     st.session_state.total_requests = int(config.get("total_requests", st.session_state.total_requests))
-    st.session_state.urgency_base = int(config.get("urgency_base", st.session_state.urgency_base))
+    st.session_state.urgency = bool(config.get("urgency", st.session_state.urgency))
     st.session_state.imbalance_factor = int(config.get("imbalance_factor", st.session_state.imbalance_factor))
 
     max_absent = max(0, st.session_state.num_staff - 1)
@@ -516,12 +516,13 @@ def build_engine_and_run_config() -> Dict:
         "random_seed": manual_seed,
         "work_start": st.session_state.work_start_time.strftime("%H:%M"),
         "work_end": st.session_state.work_end_time.strftime("%H:%M"),
+        "urgency": bool(st.session_state.urgency),
     }
 
     run_config = {
         "scenario": "custom",
         "total_requests": int(st.session_state.total_requests),
-        "urgency_base": int(st.session_state.urgency_base),
+        "urgency": bool(st.session_state.urgency),
         "imbalance_factor": int(st.session_state.imbalance_factor),
         "num_absent_staff": int(st.session_state.num_absent_staff) if st.session_state.enable_absence else 0,
     }
@@ -827,7 +828,7 @@ st.sidebar.time_input("Workday End", key="work_end_time")
 
 st.sidebar.subheader("Demand")
 st.sidebar.slider("Total Daily Requests", min_value=50, max_value=500, step=10, key="total_requests")
-st.sidebar.slider("Average Urgency (1-10)", min_value=1, max_value=10, step=1, key="urgency_base")
+st.sidebar.checkbox("Enable Urgency", value=False, key="urgency")
 st.sidebar.slider("College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
 
 st.sidebar.subheader("Seed")
@@ -884,6 +885,16 @@ if save_clicked:
         st.sidebar.success(f"Saved preset: {name}")
     else:
         st.sidebar.warning("Enter a preset name before saving.")
+# 🔍 DEBUG: Urgency Toggle Verification
+if st.session_state.simulation_engine is not None:
+    with st.sidebar.expander("🐛 Debug: Urgency Status", expanded=False):
+        st.markdown(f"**Checkbox State:** `{st.session_state.urgency}`")
+        st.markdown(f"**ROC Weight for Urgency:** `{PRIORITY_WEIGHTS.get('urgency', 'N/A')}`")
+            
+        if st.session_state.simulation_results and st.session_state.simulation_results.get('completed_requests'):
+            sample = st.session_state.simulation_results['completed_requests'][0]
+            st.markdown(f"**Sample Request `{sample['request_id']}` Priority:** `{sample['priority_score']}`")
+            st.caption("Run twice (checkbox OFF/ON) to compare this number.")
 
 if run_clicked:
     with st.spinner("Running simulation..."):
@@ -1640,12 +1651,13 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
                     random_seed=same_seed,
                     work_start=st.session_state.work_start_time.strftime("%H:%M"),
                     work_end=st.session_state.work_end_time.strftime("%H:%M"),
+                    urgency= st.session_state.urgency,
                 )
                 compare_result = compare_engine.run(
                     custom_config={
                         "scenario": "custom",
                         "total_requests": int(st.session_state.total_requests),
-                        "urgency_base": int(st.session_state.urgency_base),
+                        "urgency": bool(st.session_state.urgency),
                         "imbalance_factor": int(st.session_state.imbalance_factor),
                         "num_absent_staff": int(st.session_state.num_absent_staff),
                     }
@@ -1966,3 +1978,4 @@ if st.session_state.last_run_config:
         mime="application/json",
         use_container_width=True,
     )
+

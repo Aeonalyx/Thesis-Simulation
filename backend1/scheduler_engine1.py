@@ -198,6 +198,7 @@ class DocumentRequest:
         current_time: datetime,
         weights: Dict[str, float],
         workday_minutes: int,
+        urgency: bool = False,
     ) -> float:
         """Compute weighted priority score for this request at current_time."""
         self.update_status(current_time)
@@ -228,6 +229,8 @@ class DocumentRequest:
         else:
             payment_norm = 1.0 if bool(self.payment_status) else 0.0
 
+        urgency_norm = float(self.urgency) / 10.0 if urgency else 0.0
+
         scores = {
             "completeness_of_requirements": completeness_norm,
             "submission_time": submission_norm,
@@ -235,10 +238,13 @@ class DocumentRequest:
             "requester_status": requester_norm,
             "college_affiliation": college_norm,
             "payment_status": payment_norm,
+            "urgency": urgency_norm
         }
 
         total_score = 0.0
         for key, weight in weights.items():
+            if key == "urgency" and not urgency:
+                continue
             total_score += float(weight) * scores.get(key, 0.0)
 
         self.priority_score = _soft_cap(total_score, PRIORITY_SCORE_HALF_LIFE)
@@ -356,9 +362,10 @@ class WeightedPriorityScheduler:
         current_time: datetime,
         weights: Dict[str, float],
         workday_minutes: int,
+        urgency: bool = False,
     ) -> List[DocumentRequest]:
         for req in self.pending:
-            req.calculate_priority(current_time, weights, workday_minutes)
+            req.calculate_priority(current_time, weights, workday_minutes, urgency)
         return sorted(self.pending, key=lambda r: (-r.priority_score, r.submission_time))
 
 
@@ -376,6 +383,7 @@ class SimulationEngine:
         random_seed: Optional[int] = None,
         work_start: str = "08:00",
         work_end: str = "17:00",
+        urgency: bool = False,
     ):
         self.scheduler_type = (scheduler_type or "FCFS").upper().strip()
         self.allocator_type = (allocator_type or "college_based").strip().lower()
@@ -411,6 +419,7 @@ class SimulationEngine:
         self.event_log: List[Dict] = []
         self._event_seq = 0
         self.absent_staff_ids: List[str] = []
+        self.urgency = urgency
 
     # ---------------------------------------------------------------------
     # Time helpers
@@ -1139,6 +1148,7 @@ class SimulationEngine:
                 current_time=current_time,
                 weights=self.priority_weights,
                 workday_minutes=self.workday_minutes,
+                urgency=self.urgency,
             )
 
             top_preview = [

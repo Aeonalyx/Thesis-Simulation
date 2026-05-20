@@ -28,6 +28,7 @@ priority_criteria_ranking = [
     "requester_status",
     "college_affiliation",
     "payment_status",
+    "urgency",
 ]
 
 # Compute weights
