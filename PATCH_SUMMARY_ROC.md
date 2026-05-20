@@ -72,7 +72,7 @@ from backend1.roc_utils import PRIORITY_ROC_WEIGHTS
 
 
 ## TO DOs
-- Finalize requester status and scoring, fix staffing tables, make queue list priority score adaptive to changes overtime, Finalize College scores as per group discussion. FINALIZE SCENARIOS, DO WE ADD PEAK PERIOD (GRADUATION PERIOD, ETC) AND OTHER?
+- Finalize requester status and scoring, fix staffing tables, make queue list priority score adaptive to changes overtime, Finalize College scores as per group discussion. FINALIZE SCENARIOS, DO WE ADD PEAK PERIOD (GRADUATION PERIOD, ETC) AND OTHER?, CHANGE DAY COUNTING TO START FROM 1 INSTEAD FROM 0, FINALIZE QUOTA-FREE SINCE ITS NOT WORKING YET
 
 
 ## Done after todos

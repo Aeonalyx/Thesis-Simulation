@@ -788,7 +788,14 @@ class SimulationEngine:
         if mode == "earliest":
             return min(options, key=lambda item: (item[0], item[1].total_assigned, item[1].staff_id))
         if mode == "least_loaded":
-            return min(options, key=lambda item: (item[1].total_assigned, item[0], item[1].staff_id))
+            return min(
+                options,
+                key=lambda item: (
+                    item[1].assignments_on_day(item[0].date()),
+                    item[0],
+                    item[1].staff_id,
+                ),
+            )
         if mode == "pooled":
             return min(options, key=lambda item: (item[0], item[1].total_assigned, item[1].staff_id))
         return min(options, key=lambda item: (item[0], item[1].staff_id))
@@ -855,6 +862,7 @@ class SimulationEngine:
             return staff, slot, "pooled_earliest"
 
         # workload_based
+        target_day = earliest.date()
         same_options = self._build_staff_options(
             request,
             same_college,
@@ -862,27 +870,26 @@ class SimulationEngine:
             enforce_quota=True,
             exact_time=exact_time,
         )
-        same_day_same = [item for item in same_options if item[0].date() == request_day]
+        same_day_same = [item for item in same_options if item[0].date() == target_day]
         chosen = self._select_from_options(same_day_same, mode="least_loaded")
         if chosen:
             slot, staff = chosen
             return staff, slot, "same_college_least_loaded"
 
-        fallback_options = self._build_staff_options(
+        all_options = self._build_staff_options(
             request,
-            other_staff,
+            all_active,
             earliest,
             enforce_quota=True,
             exact_time=exact_time,
         )
-        same_day_fallback = [item for item in fallback_options if item[0].date() == request_day]
-        chosen = self._select_from_options(same_day_fallback, mode="least_loaded")
+        same_day_any = [item for item in all_options if item[0].date() == target_day]
+        chosen = self._select_from_options(same_day_any, mode="least_loaded")
         if chosen:
             slot, staff = chosen
-            return staff, slot, "cross_college_same_day_fallback"
+            return staff, slot, "least_loaded_same_day"
 
-        combined = same_options + fallback_options
-        chosen = self._select_from_options(combined, mode="earliest")
+        chosen = self._select_from_options(all_options, mode="earliest")
         if not chosen:
             return None
         slot, staff = chosen

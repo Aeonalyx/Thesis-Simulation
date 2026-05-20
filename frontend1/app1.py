@@ -9,6 +9,7 @@ Focus:
 """
 
 import json
+import math
 import os
 import sys
 import time as tm
@@ -380,7 +381,7 @@ DEFAULT_STATE = {
     "manual_seed": 12345,
     **WEIGHT_DEFAULT_STATE,
     "playback_frame": 0,
-    "playback_frame_ui": 0,
+    "playback_frame_ui": 1,
     "playback_speed": "1.00x",
     "playback_playing": False,
 }
@@ -496,7 +497,7 @@ def clear_run_state():
     st.session_state.comparison_df = None
     st.session_state.last_run_config = None
     st.session_state.playback_frame = 0
-    st.session_state.playback_frame_ui = 0
+    st.session_state.playback_frame_ui = 1
     st.session_state.playback_playing = False
 
 
@@ -542,7 +543,7 @@ def run_simulation_now():
     st.session_state.simulation_results = results
     st.session_state.last_run_config = payload
     st.session_state.playback_frame = 0
-    st.session_state.playback_frame_ui = 0
+    st.session_state.playback_frame_ui = 1
     st.session_state.playback_playing = False
 
 
@@ -701,7 +702,7 @@ def playback_state(decisions: List[Dict], step: int) -> Dict:
 def on_playback_slider_change():
     """Sync slider position to internal request-step state and pause autoplay."""
     st.session_state.playback_playing = False
-    st.session_state.playback_frame = int(st.session_state.playback_frame_ui)
+    st.session_state.playback_frame = max(0, int(st.session_state.playback_frame_ui) - 1)
 
 
 def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
@@ -717,6 +718,7 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
     display_rows: List[Dict] = []
     last_day = None
     day_block = 0
+    day_count = 0
 
     for row in ordered_rows:
         assigned_at_raw = row.get("Assigned At")
@@ -730,6 +732,7 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
                 display_rows.append(
                     {
                         "Day Block": divider_text,
+                        "Count": "",
                         "Request": "",
                         "College": "",
                         "Document": "",
@@ -740,12 +743,15 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
                 )
             day_block += 1
             day_label = f"Day {day_block} ({format_compact_day(assigned_day)})"
+            day_count = 0
         else:
             day_label = ""
 
+        day_count += 1
         display_rows.append(
             {
                 "Day Block": day_label,
+                "Count": day_count,
                 "Request": row.get("Request", ""),
                 "College": row.get("College", ""),
                 "Document": row.get("Document", ""),
@@ -928,7 +934,7 @@ if not decisions:
 else:
     max_step = len(decisions) - 1
     st.session_state.playback_frame = min(st.session_state.playback_frame, max_step)
-    st.session_state.playback_frame_ui = min(st.session_state.playback_frame_ui, max_step)
+    st.session_state.playback_frame_ui = min(max(st.session_state.playback_frame_ui, 1), max_step + 1)
 
     force_slider_sync = False
 
@@ -958,12 +964,12 @@ else:
         st.session_state.playback_playing
         and st.session_state.playback_frame_ui != st.session_state.playback_frame
     ):
-        st.session_state.playback_frame_ui = st.session_state.playback_frame
+        st.session_state.playback_frame_ui = st.session_state.playback_frame + 1
 
     st.slider(
         "Request Step",
-        min_value=0,
-        max_value=max_step,
+        min_value=1,
+        max_value=max_step + 1,
         key="playback_frame_ui",
         on_change=on_playback_slider_change,
     )
@@ -1081,7 +1087,7 @@ else:
 
         card1, card2, card3, card4, card5 = st.columns(5)
         card1.metric("Simulation Clock", current_time.strftime("%Y-%m-%d %H:%M"))
-        card2.metric("Current Request Step", f"{st.session_state.playback_frame}/{max_step}")
+        card2.metric("Current Request Step", f"{st.session_state.playback_frame + 1}/{max_step + 1}")
         card3.metric("Processed Decisions", frame_data["processed_count"])
         card4.metric("Assigned So Far", frame_data["assigned_count"])
         card5.metric("Queue Size Now", len(pending_queue_rows) + frame_data["waiting_count"])
@@ -1248,10 +1254,11 @@ with k3:
     )
 with k4:
     elapsed_days = float(results.get("total_days_elapsed", 0.0))
+    elapsed_day_index = max(1, int(math.floor(elapsed_days)) + 1)
     st.metric(
         "Days Elapsed",
-        f"{elapsed_days:.2f} d",
-        f"{(elapsed_days * 24.0):.2f} h equiv",
+        f"Day {elapsed_day_index}",
+        f"{elapsed_days:.2f} d span",
     )
 with k5:
     st.metric("Throughput", f"{results.get('throughput_req_per_day', 0):.2f} req/day")
@@ -1349,6 +1356,7 @@ else:
         sort_options = [
             "Assigned Day",
             "Submission Time",
+            "Staff List Order",
             "Queue Wait Desc",
             "Queue Wait Asc",
             "Turnaround Desc",
@@ -1368,6 +1376,8 @@ else:
     if filter_doc != "All":
         filtered = [req for req in filtered if req.document_type == filter_doc]
 
+    staff_order = {staff.staff_id: idx for idx, staff in enumerate(engine.staff_pool)}
+
     if sort_by == "Priority Desc":
         filtered = sorted(
             filtered,
@@ -1379,9 +1389,25 @@ else:
             key=lambda req: (float(getattr(req, "priority_score", 0.0)), req.submission_time),
         )
     elif sort_by == "Assigned Day":
-        filtered = sorted(filtered, key=lambda req: (req.assignment_time.date(), req.submission_time))
+        filtered = sorted(
+            filtered,
+            key=lambda req: (
+                req.assignment_time.date(),
+                req.completion_time,
+                req.submission_time,
+            ),
+        )
     elif sort_by == "Submission Time":
         filtered = sorted(filtered, key=lambda req: req.submission_time)
+    elif sort_by == "Staff List Order":
+        filtered = sorted(
+            filtered,
+            key=lambda req: (
+                req.assignment_time,
+                staff_order.get(req.assigned_staff, 9999),
+                req.submission_time,
+            ),
+        )
     elif sort_by == "Queue Wait Desc":
         filtered = sorted(filtered, key=lambda req: req.get_waiting_time_minutes(), reverse=True)
     elif sort_by == "Queue Wait Asc":
@@ -1394,7 +1420,7 @@ else:
         assigned_day = (req.assignment_time.date() - engine.start_time.date()).days + 1
         table_rows.append(
             {
-                "Row": idx,
+                "Row": idx + 1,
                 "Request": req.request_id,
                 "College": req.college,
                 "Document": req.document_type,
@@ -1415,13 +1441,13 @@ else:
     st.subheader("Detailed Request Panel")
     pick_index = st.number_input(
         "Select Row",
-        min_value=0,
-        max_value=max(0, len(filtered) - 1),
-        value=0,
+        min_value=1,
+        max_value=max(1, len(filtered)),
+        value=1,
         step=1,
     )
 
-    selected_req = filtered[int(pick_index)]
+    selected_req = filtered[int(pick_index) - 1]
     d1, d2 = st.columns(2)
 
     with d1:
@@ -1598,6 +1624,7 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
         st.warning("Select at least one scheduler and one allocator.")
     else:
         compare_rows = []
+        compare_details = []
         same_seed = int(results.get("seed_used", st.session_state.manual_seed))
 
         for scheduler in compare_schedulers:
@@ -1621,6 +1648,14 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
                         "urgency_base": int(st.session_state.urgency_base),
                         "imbalance_factor": int(st.session_state.imbalance_factor),
                         "num_absent_staff": int(st.session_state.num_absent_staff),
+                    }
+                )
+
+                compare_details.append(
+                    {
+                        "scheduler": scheduler,
+                        "allocator": allocator,
+                        "completed_requests": compare_result.get("completed_requests", []),
                     }
                 )
 
@@ -1659,9 +1694,218 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
         ).round(2)
 
         st.session_state.comparison_df = compare_df
+        st.session_state.comparison_details = compare_details
 
 if st.session_state.comparison_df is not None:
     render_theme_table(st.session_state.comparison_df, height_px=360)
+
+comparison_details = st.session_state.get("comparison_details")
+if st.session_state.comparison_df is not None and comparison_details:
+    st.subheader("Request-Level Differences")
+
+    def _build_request_index(completed_requests: List[Dict]) -> Dict[str, Dict[str, object]]:
+        rows = []
+        for item in completed_requests:
+            request_id = item.get("request_id")
+            if not request_id:
+                continue
+            assign_raw = item.get("assignment_time")
+            complete_raw = item.get("completion_time")
+            rows.append(
+                {
+                    "request_id": request_id,
+                    "assignment_time": parse_event_time(str(assign_raw)) if assign_raw else None,
+                    "completion_time": parse_event_time(str(complete_raw)) if complete_raw else None,
+                    "assigned_staff": item.get("assigned_staff"),
+                }
+            )
+
+        rows = sorted(
+            rows,
+            key=lambda r: (r["assignment_time"] or datetime.max, r["request_id"]),
+        )
+        index: Dict[str, Dict[str, object]] = {}
+        for rank, row in enumerate(rows, start=1):
+            index[row["request_id"]] = {
+                "rank": rank,
+                "assignment_time": row["assignment_time"],
+                "completion_time": row["completion_time"],
+                "assigned_staff": row["assigned_staff"],
+            }
+        return index
+
+    compare_df = st.session_state.comparison_df
+    baseline_row = compare_df.iloc[0]
+    baseline_match = compare_df[
+        (compare_df["scheduler"] == "FCFS")
+        & (compare_df["allocator"] == "college_based")
+    ]
+    if not baseline_match.empty:
+        baseline_row = baseline_match.iloc[0]
+
+    baseline_key = (baseline_row["scheduler"], baseline_row["allocator"])
+    baseline_details = next(
+        (
+            item
+            for item in comparison_details
+            if (item["scheduler"], item["allocator"]) == baseline_key
+        ),
+        None,
+    )
+
+    if baseline_details is None:
+        st.info("Baseline details not available for request-level comparison.")
+    else:
+        baseline_index = _build_request_index(baseline_details["completed_requests"])
+        baseline_requests = set(baseline_index.keys())
+
+        diff_rows = []
+        for item in comparison_details:
+            scheduler = item["scheduler"]
+            allocator = item["allocator"]
+            key = (scheduler, allocator)
+            if key == baseline_key:
+                continue
+
+            current_index = _build_request_index(item["completed_requests"])
+            current_requests = set(current_index.keys())
+            common = baseline_requests.intersection(current_requests)
+
+            if not common:
+                continue
+
+            order_changed = 0
+            staff_changed = 0
+            rank_shift_total = 0.0
+            assign_delta_total = 0.0
+            complete_delta_total = 0.0
+
+            for request_id in common:
+                base = baseline_index[request_id]
+                current = current_index[request_id]
+                if base["rank"] != current["rank"]:
+                    order_changed += 1
+                    rank_shift_total += abs(current["rank"] - base["rank"])
+                if base.get("assigned_staff") != current.get("assigned_staff"):
+                    staff_changed += 1
+
+                base_assign = base.get("assignment_time")
+                current_assign = current.get("assignment_time")
+                if base_assign and current_assign:
+                    assign_delta_total += abs((current_assign - base_assign).total_seconds()) / 60.0
+
+                base_complete = base.get("completion_time")
+                current_complete = current.get("completion_time")
+                if base_complete and current_complete:
+                    complete_delta_total += abs((current_complete - base_complete).total_seconds()) / 60.0
+
+            total_common = len(common)
+            avg_rank_shift = rank_shift_total / max(order_changed, 1)
+            avg_assign_delta = assign_delta_total / total_common
+            avg_complete_delta = complete_delta_total / total_common
+
+            diff_rows.append(
+                {
+                    "scheduler": scheduler,
+                    "allocator": allocator,
+                    "order_changed_count": order_changed,
+                    "order_changed_pct": round((order_changed / total_common) * 100.0, 2),
+                    "avg_abs_rank_shift": round(avg_rank_shift, 2),
+                    "staff_changed_count": staff_changed,
+                    "staff_changed_pct": round((staff_changed / total_common) * 100.0, 2),
+                    "avg_assign_time_delta_min": round(avg_assign_delta, 2),
+                    "avg_complete_time_delta_min": round(avg_complete_delta, 2),
+                }
+            )
+
+        diff_df = pd.DataFrame(diff_rows)
+        if diff_df.empty:
+            st.info("No comparable request-level differences found.")
+        else:
+            render_theme_table(diff_df, height_px=320)
+
+            fig_diff = go.Figure()
+            fig_diff.add_trace(
+                go.Bar(
+                    name="Order Changed %",
+                    x=diff_df["allocator"],
+                    y=diff_df["order_changed_pct"],
+                    marker_color="#a855f7",
+                )
+            )
+            fig_diff.add_trace(
+                go.Bar(
+                    name="Staff Changed %",
+                    x=diff_df["allocator"],
+                    y=diff_df["staff_changed_pct"],
+                    marker_color="#22d3ee",
+                )
+            )
+            fig_diff.update_layout(
+                title="Request-Level Changes vs Baseline",
+                xaxis_title="Allocator",
+                yaxis_title="Percent of Requests",
+                barmode="group",
+                height=320,
+            )
+            apply_plot_theme(fig_diff)
+            st.plotly_chart(fig_diff, use_container_width=True)
+
+            variant_labels = [
+                f"{row['scheduler']} | {row['allocator']}" for _, row in diff_df.iterrows()
+            ]
+            selected_variant = st.selectbox(
+                "Inspect Variant",
+                variant_labels,
+                index=0,
+            )
+
+            if selected_variant:
+                selected_sched, selected_alloc = [
+                    part.strip() for part in selected_variant.split("|", 1)
+                ]
+                selected_detail = next(
+                    (
+                        item
+                        for item in comparison_details
+                        if item["scheduler"] == selected_sched
+                        and item["allocator"] == selected_alloc
+                    ),
+                    None,
+                )
+                if selected_detail:
+                    current_index = _build_request_index(
+                        selected_detail["completed_requests"]
+                    )
+                    change_rows = []
+                    for request_id in baseline_requests.intersection(current_index.keys()):
+                        base = baseline_index[request_id]
+                        current = current_index[request_id]
+                        rank_shift = current["rank"] - base["rank"]
+                        base_assign = base.get("assignment_time")
+                        current_assign = current.get("assignment_time")
+                        assign_delta = None
+                        if base_assign and current_assign:
+                            assign_delta = round(
+                                (current_assign - base_assign).total_seconds() / 60.0, 2
+                            )
+                        change_rows.append(
+                            {
+                                "Request": request_id,
+                                "Rank Shift": rank_shift,
+                                "Assigned Staff": current.get("assigned_staff"),
+                                "Staff Changed": base.get("assigned_staff")
+                                != current.get("assigned_staff"),
+                                "Assign Delta (min)": assign_delta,
+                            }
+                        )
+
+                    change_df = pd.DataFrame(change_rows)
+                    change_df["_abs_shift"] = change_df["Rank Shift"].abs()
+                    change_df = change_df.sort_values(
+                        by=["_abs_shift", "Request"], ascending=[False, True]
+                    ).drop(columns=["_abs_shift"])
+                    render_theme_table(change_df.head(25), height_px=320)
 
 
 # ============================================================================
