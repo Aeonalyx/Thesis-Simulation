@@ -374,6 +374,7 @@ DEFAULT_STATE = {
     "total_requests": 200,
     "imbalance_factor": 0,
     "num_absent_staff": 0,
+    "peak_mode": False,
     "work_start_time": time(8, 0),
     "work_end_time": time(17, 0),
     "seed_mode": "Auto",
@@ -426,6 +427,7 @@ def collect_ui_config() -> Dict:
         "quota_limit": int(st.session_state.quota_limit),
         "enable_absence": bool(st.session_state.enable_absence),
         "total_requests": int(st.session_state.total_requests),
+        "peak_mode": bool(st.session_state.peak_mode),
         "urgency": bool(st.session_state.urgency),
         "imbalance_factor": int(st.session_state.imbalance_factor),
         "num_absent_staff": int(st.session_state.num_absent_staff),
@@ -454,6 +456,7 @@ def apply_ui_config(config: Dict):
     st.session_state.enable_absence = bool(enable_absence)
 
     st.session_state.total_requests = int(config.get("total_requests", st.session_state.total_requests))
+    st.session_state.peak_mode = bool(config.get("peak_mode", st.session_state.peak_mode))
     st.session_state.urgency = bool(config.get("urgency", st.session_state.urgency))
     st.session_state.imbalance_factor = int(config.get("imbalance_factor", st.session_state.imbalance_factor))
 
@@ -504,6 +507,7 @@ def clear_run_state():
 def build_engine_and_run_config() -> Dict:
     weights = normalized_weights_from_ui()
     manual_seed = int(st.session_state.manual_seed) if st.session_state.seed_mode == "Manual" else None
+    scenario = "peak_period" if st.session_state.peak_mode else "baseline"
 
     engine_kwargs = {
         "scheduler_type": st.session_state.scheduler_type,
@@ -520,7 +524,7 @@ def build_engine_and_run_config() -> Dict:
     }
 
     run_config = {
-        "scenario": "custom",
+        "scenario": scenario,
         "total_requests": int(st.session_state.total_requests),
         "urgency": bool(st.session_state.urgency),
         "imbalance_factor": int(st.session_state.imbalance_factor),
@@ -829,6 +833,14 @@ st.sidebar.time_input("Workday End", key="work_end_time")
 st.sidebar.subheader("Demand")
 st.sidebar.slider("Total Daily Requests", min_value=50, max_value=500, step=10, key="total_requests")
 st.sidebar.checkbox("Enable Urgency", value=False, key="urgency")
+def on_peak_mode_change():
+    if st.session_state.peak_mode:
+        if st.session_state.total_requests == 200:
+            st.session_state.total_requests = 400
+    elif st.session_state.total_requests == 400:
+        st.session_state.total_requests = 200
+
+st.sidebar.checkbox("Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change)
 st.sidebar.slider("College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
 
 st.sidebar.subheader("Seed")
@@ -1655,7 +1667,7 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
                 )
                 compare_result = compare_engine.run(
                     custom_config={
-                        "scenario": "custom",
+                        "scenario": "peak_period" if st.session_state.peak_mode else "baseline",
                         "total_requests": int(st.session_state.total_requests),
                         "urgency": bool(st.session_state.urgency),
                         "imbalance_factor": int(st.session_state.imbalance_factor),

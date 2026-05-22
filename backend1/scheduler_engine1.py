@@ -562,6 +562,12 @@ class SimulationEngine:
                 "imbalance_factor": 0,
                 "num_absent_staff": 0,
             },
+            "peak_period": {
+                "total_requests": 400,
+                "urgency_base": 5,
+                "imbalance_factor": 0,
+                "num_absent_staff": 0,
+            },
             "peak_urgency": {
                 "total_requests": 260,
                 "urgency_base": 8,
@@ -635,6 +641,16 @@ class SimulationEngine:
         if sum(requester_weights) <= 0:
             requester_weights = [1.0] * len(requester_types)
         document_types = list(DOCUMENT_COMPLEXITY.keys())
+        doc_weights = [1.0] * len(document_types)
+
+        if config.get("scenario") == "peak_period":
+            boost_map = {
+                "Official Transcript of Records (TOR) and Transfer Credentials (TC)": 3.0,
+                "Certification": 2.0,
+            }
+            doc_weights = [
+                float(boost_map.get(doc, 1.0)) for doc in document_types
+            ]
 
         morning_count = int(total_requests * 0.60)
         afternoon_count = int(total_requests * 0.20)
@@ -664,7 +680,7 @@ class SimulationEngine:
                 submission_offset_hours = self.rng.uniform(hour_min, hour_max)
                 submission_time = self.start_time + timedelta(hours=submission_offset_hours)
                 college = self.rng.choices(colleges, weights=weights, k=1)[0]
-                document_type = self.rng.choice(document_types)
+                document_type = self.rng.choices(document_types, weights=doc_weights, k=1)[0]
                 allowed_requesters = DOCUMENT_REQUESTER_RESTRICTIONS.get(document_type)
                 if allowed_requesters:
                     allowed = [r for r in requester_types if r in allowed_requesters]

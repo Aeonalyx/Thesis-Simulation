@@ -79,3 +79,9 @@ from backend1.roc_utils import PRIORITY_ROC_WEIGHTS
  - finalized requester types with equal scoring, added generate weights for requesters and document restrictions as per citizen's charter, fix minor frontend/table designs.
 
 
+### what's new
+- Added a checkbox for "peak period" which makes TOR and certification have 3x,2x more likely to be generated
+
+
+### More to add
+- add visual for document request spread, also disable priority score progression table when fcfs is selected as scheduler. custom request rather than generated? and the request must be inserted based on setup (time progression, when it was submitted, etc) and is highlighted to show where it would end up in the playback
