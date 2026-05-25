@@ -274,6 +274,7 @@ def apply_dashboard_theme():
             color: #f3edff;
         }
 
+
         .theme-table tbody td:last-child,
         .theme-table thead th:last-child {
             text-align: right;
@@ -347,6 +348,10 @@ apply_dashboard_theme()
 PRESET_FILE = os.path.join(os.path.dirname(__file__), "saved_presets.json")
 
 SCHEDULER_OPTIONS = ["FCFS", "WEIGHTED"]
+SCHEDULER_LABELS = {
+    "FCFS": "FCFS (default)",
+    "WEIGHTED": "Weighted (priority-based)",
+}
 ALLOCATOR_OPTIONS = ["college_based", "workload_based", "pooled", "quota_free"]
 
 SPEED_OPTIONS = {
@@ -787,7 +792,12 @@ if reset_clicked:
     clear_run_state()
     st.rerun()
 
-st.sidebar.selectbox("Scheduler", SCHEDULER_OPTIONS, key="scheduler_type")
+st.sidebar.selectbox(
+    "Scheduler",
+    SCHEDULER_OPTIONS,
+    key="scheduler_type",
+    format_func=lambda value: SCHEDULER_LABELS.get(value, value),
+)
 st.sidebar.selectbox("Allocator", ALLOCATOR_OPTIONS, key="allocator_type")
 
 st.sidebar.subheader("Capacity and Policy")
@@ -1357,6 +1367,96 @@ with chart_col2:
         apply_plot_theme(fig_timeline)
         st.plotly_chart(fig_timeline, use_container_width=True)
 
+if engine.completed:
+    selected_college = st.selectbox(
+        "Filter Document Mix by College",
+        ["All"] + COLLEGES,
+        key="doc_mix_college",
+    )
+    if selected_college == "All":
+        filtered_docs = list(engine.completed)
+    else:
+        filtered_docs = [
+            req for req in engine.completed if req.college == selected_college
+        ]
+
+    if filtered_docs:
+        doc_df = pd.DataFrame(
+            [{"document_type": req.document_type} for req in filtered_docs]
+        )
+        doc_counts = doc_df["document_type"].value_counts().reset_index()
+        doc_counts.columns = ["Document", "Count"]
+        total_docs = int(doc_counts["Count"].sum())
+
+        short_doc_names = {
+            "Certification, Authentication and Verification (CAV)": "CAV",
+            "Official Transcript of Records (TOR) and Transfer Credentials (TC)": "TOR/TC",
+            "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)": "ROG/COR",
+            "Permit to Cross-Enrol": "Cross-Enrol Permit",
+            "Academic Load Revision (ALRP)": "ALRP",
+            "Shifter’s Form, Returnee’s Form or Leave of Absence": "Shifter/Returnee/LOA",
+            "Registration of Old and Returnee Students": "Old/Returnee Reg",
+        }
+
+        doc_left, doc_right = st.columns([2, 1])
+        with doc_left:
+            fig_docs = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=doc_counts["Document"],
+                        values=doc_counts["Count"],
+                        hole=0.55,
+                        textinfo="percent",
+                    )
+                ]
+            )
+            fig_docs.update_layout(
+                title="Requested Document Mix (Completed)",
+                height=420,
+                showlegend=False,
+            )
+            apply_plot_theme(fig_docs)
+            st.plotly_chart(fig_docs, use_container_width=True)
+
+        with doc_right:
+            st.markdown(
+                f"<div style='font-size:0.9rem; color:#b6b0d4; margin-bottom:0.4rem;'>"
+                f"Total processed: <span style='color:#f5f3ff; font-weight:700;'>{total_docs}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            legend_rows = []
+            for row in doc_counts.itertuples(index=False):
+                pct = (float(row.Count) / max(total_docs, 1)) * 100.0
+                label = short_doc_names.get(row.Document, row.Document)
+                legend_rows.append(
+                    {
+                        "label": label,
+                        "count": int(row.Count),
+                        "pct": pct,
+                    }
+                )
+            mid_point = (len(legend_rows) + 1) // 2
+            legend_col1, legend_col2 = st.columns(2)
+            for col, rows in zip(
+                [legend_col1, legend_col2],
+                [legend_rows[:mid_point], legend_rows[mid_point:]],
+            ):
+                with col:
+                    block = []
+                    for item in rows:
+                        block.append(
+                            f"<div style='margin:0.3rem 0;'>"
+                            f"<span style='font-weight:700; color:#e7e1fa;'>{item['label']}</span>"
+                            f"<br />"
+                            f"<span style='color:#a7a0c5;'>{item['count']}"
+                            f" <span style='color:#7dd3fc;'>({item['pct']:.1f}%)</span></span>"
+                            f"</div>"
+                        )
+                    st.markdown("".join(block), unsafe_allow_html=True)
+    else:
+        st.caption("No completed requests for the selected college.")
+
 
 # ============================================================================
 # REQUEST INSPECTION
@@ -1508,56 +1608,57 @@ else:
         st.write(f"**Queue Wait:** {selected_req.get_waiting_time_minutes() / 60.0:.2f} h")
         st.write(f"**Turnaround:** {selected_req.get_turnaround_time_minutes() / 1440.0:.2f} d")
 
-    st.subheader("Priority Score Progression")
+    if is_weighted_scheduler:
+        st.subheader("Priority Score Progression")
 
-    def _score_at(request_obj: DocumentRequest, at_time: Optional[datetime]) -> Optional[float]:
-        if at_time is None:
-            return None
-        original_state = (
-            request_obj.completeness_of_requirements,
-            request_obj.payment_status,
-            request_obj.requirements_stage,
-            request_obj.priority_score,
-        )
-        try:
-            return request_obj.calculate_priority(
-                at_time,
-                engine.priority_weights,
-                engine.workday_minutes,
-            )
-        finally:
-            (
+        def _score_at(request_obj: DocumentRequest, at_time: Optional[datetime]) -> Optional[float]:
+            if at_time is None:
+                return None
+            original_state = (
                 request_obj.completeness_of_requirements,
                 request_obj.payment_status,
                 request_obj.requirements_stage,
                 request_obj.priority_score,
-            ) = original_state
+            )
+            try:
+                return request_obj.calculate_priority(
+                    at_time,
+                    engine.priority_weights,
+                    engine.workday_minutes,
+                )
+            finally:
+                (
+                    request_obj.completeness_of_requirements,
+                    request_obj.payment_status,
+                    request_obj.requirements_stage,
+                    request_obj.priority_score,
+                ) = original_state
 
-    stage_points = [
-        ("Submitted", selected_req.submission_time),
-        ("Requirements Partial", getattr(selected_req, "requirements_partial_time", None)),
-        ("Requirements Complete", getattr(selected_req, "requirements_complete_time", None)),
-        ("Payment", getattr(selected_req, "payment_time", None)),
-        ("Ready", getattr(selected_req, "ready_time", None)),
-        ("Assigned", selected_req.assignment_time),
-    ]
-    stage_rows = []
-    for label, ts in stage_points:
-        if ts is None:
-            continue
-        score_value = _score_at(selected_req, ts)
-        stage_rows.append(
-            {
-                "Stage": label,
-                "Time": format_compact_datetime(ts),
-                "Priority Score": round(float(score_value or 0.0), 4),
-            }
-        )
-    if stage_rows:
-        stage_df = pd.DataFrame(stage_rows)
-        render_theme_table(stage_df, height_px=220)
-    else:
-        st.write("No stage timestamps available.")
+        stage_points = [
+            ("Submitted", selected_req.submission_time),
+            ("Requirements Partial", getattr(selected_req, "requirements_partial_time", None)),
+            ("Requirements Complete", getattr(selected_req, "requirements_complete_time", None)),
+            ("Payment", getattr(selected_req, "payment_time", None)),
+            ("Ready", getattr(selected_req, "ready_time", None)),
+            ("Assigned", selected_req.assignment_time),
+        ]
+        stage_rows = []
+        for label, ts in stage_points:
+            if ts is None:
+                continue
+            score_value = _score_at(selected_req, ts)
+            stage_rows.append(
+                {
+                    "Stage": label,
+                    "Time": format_compact_datetime(ts),
+                    "Priority Score": round(float(score_value or 0.0), 4),
+                }
+            )
+        if stage_rows:
+            stage_df = pd.DataFrame(stage_rows)
+            render_theme_table(stage_df, height_px=220)
+        else:
+            st.write("No stage timestamps available.")
 
     st.subheader("Request Lifecycle Timeline")
 
