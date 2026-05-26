@@ -330,6 +330,216 @@ def apply_dashboard_theme():
             background: rgba(255, 255, 255, 0.14);
             white-space: nowrap;
         }
+
+        .comparison-board {
+            display: grid;
+            gap: 0.9rem;
+            margin-top: 0.6rem;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.9rem;
+        }
+
+        .comparison-card {
+            position: relative;
+            border-radius: 18px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background:
+                radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 38%),
+                linear-gradient(160deg, rgba(26, 20, 47, 0.96) 0%, rgba(18, 15, 35, 0.96) 100%);
+            box-shadow: 0 16px 34px rgba(5, 4, 12, 0.42);
+            padding: 0.95rem 1rem 1rem;
+            overflow: hidden;
+        }
+
+        .comparison-card::before {
+            content: "";
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 4px;
+            background: linear-gradient(90deg, #22d3ee 0%, #60a5fa 45%, #a855f7 100%);
+        }
+
+        .comparison-card h4 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 800;
+            color: #f8f6ff;
+        }
+
+        .comparison-card .meta {
+            margin-top: 0.22rem;
+            color: #bcb3da;
+            font-size: 0.8rem;
+        }
+
+        .comparison-pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.38rem;
+            margin-top: 0.7rem;
+        }
+
+        .comparison-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            border-radius: 999px;
+            padding: 0.34rem 0.62rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background: rgba(255, 255, 255, 0.04);
+            color: #efeafe;
+        }
+
+        .comparison-pill.good {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.32);
+            color: #a7f3d0;
+        }
+
+        .comparison-pill.warn {
+            background: rgba(245, 158, 11, 0.15);
+            border-color: rgba(245, 158, 11, 0.32);
+            color: #fde68a;
+        }
+
+        .comparison-pill.neutral {
+            background: rgba(96, 165, 250, 0.12);
+            border-color: rgba(96, 165, 250, 0.28);
+            color: #bfdbfe;
+        }
+
+        .comparison-big {
+            display: flex;
+            align-items: baseline;
+            gap: 0.3rem;
+            margin-top: 0.7rem;
+        }
+
+        .comparison-big .value {
+            font-size: 2rem;
+            line-height: 1;
+            font-weight: 900;
+            letter-spacing: -0.03em;
+        }
+
+        .comparison-big .label {
+            color: #cfc8e8;
+            font-size: 0.82rem;
+            font-weight: 600;
+        }
+
+        .comparison-bar {
+            margin-top: 0.7rem;
+            width: 100%;
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.14);
+            overflow: hidden;
+        }
+
+        .comparison-bar > span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #22d3ee 0%, #60a5fa 55%, #a855f7 100%);
+        }
+
+        .comparison-columns {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.9rem;
+            margin-top: 0.2rem;
+        }
+
+        .comparison-panel {
+            border-radius: 18px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(255, 255, 255, 0.03);
+            padding: 0.95rem 1rem 1rem;
+        }
+
+        .comparison-panel h5 {
+            margin: 0 0 0.6rem;
+            font-size: 0.95rem;
+            font-weight: 800;
+        }
+
+        .comparison-list {
+            display: grid;
+            gap: 0.58rem;
+        }
+
+        .comparison-item {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 0.6rem;
+            align-items: center;
+            padding: 0.52rem 0.62rem;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+        }
+
+        .comparison-icon {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 999px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            font-weight: 900;
+            color: #fff;
+        }
+
+        .comparison-icon.good {
+            background: linear-gradient(135deg, #10b981 0%, #22c55e 100%);
+        }
+
+        .comparison-icon.bad {
+            background: linear-gradient(135deg, #f97316 0%, #ef4444 100%);
+        }
+
+        .comparison-icon.neutral {
+            background: linear-gradient(135deg, #60a5fa 0%, #7c3aed 100%);
+        }
+
+        .comparison-item-title {
+            font-weight: 700;
+            color: #f3edff;
+            font-size: 0.88rem;
+        }
+
+        .comparison-item-sub {
+            color: #bcb3da;
+            font-size: 0.74rem;
+            margin-top: 0.1rem;
+        }
+
+        .comparison-item-value {
+            font-size: 0.96rem;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .comparison-callout {
+            margin-top: 0.2rem;
+            padding: 0.9rem 1rem;
+            border-radius: 16px;
+            border: 1px solid rgba(96, 165, 250, 0.22);
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(17, 24, 39, 0.75) 100%);
+            color: #e5e7eb;
+        }
+
+        .comparison-callout strong {
+            color: #f8fafc;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -1819,218 +2029,84 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
         ).round(2)
 
         st.session_state.comparison_df = compare_df
-        st.session_state.comparison_details = compare_details
 
 if st.session_state.comparison_df is not None:
-    render_theme_table(st.session_state.comparison_df, height_px=360)
-
-comparison_details = st.session_state.get("comparison_details")
-if st.session_state.comparison_df is not None and comparison_details:
-    st.subheader("Request-Level Differences")
-
-    def _build_request_index(completed_requests: List[Dict]) -> Dict[str, Dict[str, object]]:
-        rows = []
-        for item in completed_requests:
-            request_id = item.get("request_id")
-            if not request_id:
-                continue
-            assign_raw = item.get("assignment_time")
-            complete_raw = item.get("completion_time")
-            rows.append(
-                {
-                    "request_id": request_id,
-                    "assignment_time": parse_event_time(str(assign_raw)) if assign_raw else None,
-                    "completion_time": parse_event_time(str(complete_raw)) if complete_raw else None,
-                    "assigned_staff": item.get("assigned_staff"),
-                }
-            )
-
-        rows = sorted(
-            rows,
-            key=lambda r: (r["assignment_time"] or datetime.max, r["request_id"]),
-        )
-        index: Dict[str, Dict[str, object]] = {}
-        for rank, row in enumerate(rows, start=1):
-            index[row["request_id"]] = {
-                "rank": rank,
-                "assignment_time": row["assignment_time"],
-                "completion_time": row["completion_time"],
-                "assigned_staff": row["assigned_staff"],
-            }
-        return index
-
-    compare_df = st.session_state.comparison_df
-    baseline_row = compare_df.iloc[0]
+    compare_df = st.session_state.comparison_df.copy()
     baseline_match = compare_df[
         (compare_df["scheduler"] == "FCFS")
         & (compare_df["allocator"] == "college_based")
     ]
-    if not baseline_match.empty:
-        baseline_row = baseline_match.iloc[0]
+    baseline_row = baseline_match.iloc[0] if not baseline_match.empty else compare_df.iloc[0]
 
-    baseline_key = (baseline_row["scheduler"], baseline_row["allocator"])
-    baseline_details = next(
-        (
-            item
-            for item in comparison_details
-            if (item["scheduler"], item["allocator"]) == baseline_key
-        ),
-        None,
+    compare_df["throughput_delta_pct"] = (
+        ((compare_df["throughput_req_per_day"] / max(float(baseline_row["throughput_req_per_day"]), 1e-6)) - 1.0)
+        * 100.0
+    ).round(2)
+    compare_df["wait_delta_pct"] = (
+        (1.0 - (compare_df["avg_waiting_time_hours"] / max(float(baseline_row["avg_waiting_time_hours"]), 1e-6)))
+        * 100.0
+    ).round(2)
+    compare_df["turnaround_delta_pct"] = (
+        (1.0 - (compare_df["avg_turnaround_days"] / max(float(baseline_row["avg_turnaround_days"]), 1e-6)))
+        * 100.0
+    ).round(2)
+
+    st.markdown("### Comparison Overview")
+    st.markdown(
+        "<div class='comparison-callout'>"
+        "<strong>Baseline:</strong> FCFS + college_based. The cards below show raw metrics plus small percentage chips against that baseline."
+        "</div>",
+        unsafe_allow_html=True,
     )
 
-    if baseline_details is None:
-        st.info("Baseline details not available for request-level comparison.")
-    else:
-        baseline_index = _build_request_index(baseline_details["completed_requests"])
-        baseline_requests = set(baseline_index.keys())
+    selected_baseline = compare_df[
+        (compare_df["scheduler"] == "FCFS") & (compare_df["allocator"] == "college_based")
+    ]
+    if selected_baseline.empty:
+        selected_baseline = compare_df.iloc[[0]]
 
-        diff_rows = []
-        for item in comparison_details:
-            scheduler = item["scheduler"]
-            allocator = item["allocator"]
-            key = (scheduler, allocator)
-            if key == baseline_key:
-                continue
+    baseline_metrics = selected_baseline.iloc[0]
 
-            current_index = _build_request_index(item["completed_requests"])
-            current_requests = set(current_index.keys())
-            common = baseline_requests.intersection(current_requests)
+    def _comparison_variant_card(row: pd.Series, is_baseline: bool = False) -> str:
+        throughput_pct = float(row["throughput_delta_pct"]) if not is_baseline else 0.0
+        wait_pct = float(row["wait_delta_pct"]) if not is_baseline else 0.0
+        turnaround_pct = float(row["turnaround_delta_pct"]) if not is_baseline else 0.0
+        throughput_class = "good" if throughput_pct >= 0 else "warn"
+        wait_class = "good" if wait_pct >= 0 else "warn"
+        turnaround_class = "good" if turnaround_pct >= 0 else "warn"
+        throughput_label = "baseline" if is_baseline else f"{throughput_pct:+.1f}%"
+        wait_label = "baseline" if is_baseline else f"{wait_pct:+.1f}%"
+        turnaround_label = "baseline" if is_baseline else f"{turnaround_pct:+.1f}%"
 
-            if not common:
-                continue
+        return f"""
+        <div class="comparison-card">
+            <h4>{row['scheduler']} / {row['allocator']}</h4>
+            <div class="meta">Raw metrics plus change vs baseline</div>
+            <div class="comparison-big">
+                <div class="value">{float(row['avg_waiting_time_hours']):.2f}</div>
+                <div class="label">h avg wait</div>
+            </div>
+            <div class="comparison-pill-row">
+                <span class="comparison-pill neutral">{int(row['total_processed'])} processed</span>
+                <span class="comparison-pill neutral">{float(row['avg_turnaround_days']):.2f} d turnaround</span>
+                <span class="comparison-pill neutral">{float(row['throughput_req_per_day']):.2f} req/day</span>
+            </div>
+            <div class="comparison-pill-row" style="margin-top:0.55rem;">
+                <span class="comparison-pill {throughput_class}">Throughput {throughput_label}</span>
+                <span class="comparison-pill {wait_class}">Wait {wait_label}</span>
+                <span class="comparison-pill {turnaround_class}">Turnaround {turnaround_label}</span>
+            </div>
+        </div>
+        """
 
-            order_changed = 0
-            staff_changed = 0
-            rank_shift_total = 0.0
-            assign_delta_total = 0.0
-            complete_delta_total = 0.0
-
-            for request_id in common:
-                base = baseline_index[request_id]
-                current = current_index[request_id]
-                if base["rank"] != current["rank"]:
-                    order_changed += 1
-                    rank_shift_total += abs(current["rank"] - base["rank"])
-                if base.get("assigned_staff") != current.get("assigned_staff"):
-                    staff_changed += 1
-
-                base_assign = base.get("assignment_time")
-                current_assign = current.get("assignment_time")
-                if base_assign and current_assign:
-                    assign_delta_total += abs((current_assign - base_assign).total_seconds()) / 60.0
-
-                base_complete = base.get("completion_time")
-                current_complete = current.get("completion_time")
-                if base_complete and current_complete:
-                    complete_delta_total += abs((current_complete - base_complete).total_seconds()) / 60.0
-
-            total_common = len(common)
-            avg_rank_shift = rank_shift_total / max(order_changed, 1)
-            avg_assign_delta = assign_delta_total / total_common
-            avg_complete_delta = complete_delta_total / total_common
-
-            diff_rows.append(
-                {
-                    "scheduler": scheduler,
-                    "allocator": allocator,
-                    "order_changed_count": order_changed,
-                    "order_changed_pct": round((order_changed / total_common) * 100.0, 2),
-                    "avg_abs_rank_shift": round(avg_rank_shift, 2),
-                    "staff_changed_count": staff_changed,
-                    "staff_changed_pct": round((staff_changed / total_common) * 100.0, 2),
-                    "avg_assign_time_delta_min": round(avg_assign_delta, 2),
-                    "avg_complete_time_delta_min": round(avg_complete_delta, 2),
-                }
-            )
-
-        diff_df = pd.DataFrame(diff_rows)
-        if diff_df.empty:
-            st.info("No comparable request-level differences found.")
-        else:
-            render_theme_table(diff_df, height_px=320)
-
-            fig_diff = go.Figure()
-            fig_diff.add_trace(
-                go.Bar(
-                    name="Order Changed %",
-                    x=diff_df["allocator"],
-                    y=diff_df["order_changed_pct"],
-                    marker_color="#a855f7",
-                )
-            )
-            fig_diff.add_trace(
-                go.Bar(
-                    name="Staff Changed %",
-                    x=diff_df["allocator"],
-                    y=diff_df["staff_changed_pct"],
-                    marker_color="#22d3ee",
-                )
-            )
-            fig_diff.update_layout(
-                title="Request-Level Changes vs Baseline",
-                xaxis_title="Allocator",
-                yaxis_title="Percent of Requests",
-                barmode="group",
-                height=320,
-            )
-            apply_plot_theme(fig_diff)
-            st.plotly_chart(fig_diff, use_container_width=True)
-
-            variant_labels = [
-                f"{row['scheduler']} | {row['allocator']}" for _, row in diff_df.iterrows()
-            ]
-            selected_variant = st.selectbox(
-                "Inspect Variant",
-                variant_labels,
-                index=0,
-            )
-
-            if selected_variant:
-                selected_sched, selected_alloc = [
-                    part.strip() for part in selected_variant.split("|", 1)
-                ]
-                selected_detail = next(
-                    (
-                        item
-                        for item in comparison_details
-                        if item["scheduler"] == selected_sched
-                        and item["allocator"] == selected_alloc
-                    ),
-                    None,
-                )
-                if selected_detail:
-                    current_index = _build_request_index(
-                        selected_detail["completed_requests"]
-                    )
-                    change_rows = []
-                    for request_id in baseline_requests.intersection(current_index.keys()):
-                        base = baseline_index[request_id]
-                        current = current_index[request_id]
-                        rank_shift = current["rank"] - base["rank"]
-                        base_assign = base.get("assignment_time")
-                        current_assign = current.get("assignment_time")
-                        assign_delta = None
-                        if base_assign and current_assign:
-                            assign_delta = round(
-                                (current_assign - base_assign).total_seconds() / 60.0, 2
-                            )
-                        change_rows.append(
-                            {
-                                "Request": request_id,
-                                "Rank Shift": rank_shift,
-                                "Assigned Staff": current.get("assigned_staff"),
-                                "Staff Changed": base.get("assigned_staff")
-                                != current.get("assigned_staff"),
-                                "Assign Delta (min)": assign_delta,
-                            }
-                        )
-
-                    change_df = pd.DataFrame(change_rows)
-                    change_df["_abs_shift"] = change_df["Rank Shift"].abs()
-                    change_df = change_df.sort_values(
-                        by=["_abs_shift", "Request"], ascending=[False, True]
-                    ).drop(columns=["_abs_shift"])
-                    render_theme_table(change_df.head(25), height_px=320)
+    st.markdown("<div class='comparison-board'>", unsafe_allow_html=True)
+    st.markdown("<div class='comparison-grid'>", unsafe_allow_html=True)
+    st.markdown(_comparison_variant_card(baseline_metrics, is_baseline=True), unsafe_allow_html=True)
+    for _, row in compare_df.iterrows():
+        if row["scheduler"] == "FCFS" and row["allocator"] == "college_based":
+            continue
+        st.markdown(_comparison_variant_card(row), unsafe_allow_html=True)
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 # ============================================================================
