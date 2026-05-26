@@ -1359,6 +1359,56 @@ with chart_col2:
 
 
 # ============================================================================
+# DOCUMENT REQUEST SPREAD
+# ============================================================================
+
+spread_title_col, spread_radio_col = st.columns([4, 1])
+
+with spread_title_col:
+    st.subheader("Document Request Spread")
+
+with spread_radio_col:
+    spread_view = st.radio(
+        "View",
+        ["Generated", "Completed"],
+        horizontal=True,
+        key="spread_view",
+    )
+
+if spread_view == "Generated":
+    requests_to_analyze = results.get("generated_requests", [])
+    title_suffix = "Generated Requests"
+else:
+    requests_to_analyze = [req.to_dict() for req in engine.completed] if engine.completed else []
+    title_suffix = "Completed Requests"
+
+if requests_to_analyze:
+    doc_counts = {}
+    for req in requests_to_analyze:
+        doc_type = req.get("document_type", "Unknown") if isinstance(req, dict) else req.document_type
+        doc_counts[doc_type] = doc_counts.get(doc_type, 0) + 1
+
+    doc_df = pd.DataFrame(
+        [{"Document Type": k, "Count": v} for k, v in sorted(doc_counts.items(), key=lambda x: x[1], reverse=True)]
+    )
+
+    fig_spread = px.bar(
+        doc_df,
+        x="Document Type",
+        y="Count",
+        text="Count",
+        title=f"Document Type Distribution: {title_suffix}",
+        color="Count",
+        color_continuous_scale=["#a855f7", "#7c3aed", "#22d3ee"],
+        height=500,
+    )
+    apply_plot_theme(fig_spread)
+    st.plotly_chart(fig_spread, use_container_width=True)
+else:
+    st.info(f"No {title_suffix.lower()} available.")
+
+
+# ============================================================================
 # REQUEST INSPECTION
 # ============================================================================
 
@@ -1508,56 +1558,59 @@ else:
         st.write(f"**Queue Wait:** {selected_req.get_waiting_time_minutes() / 60.0:.2f} h")
         st.write(f"**Turnaround:** {selected_req.get_turnaround_time_minutes() / 1440.0:.2f} d")
 
-    st.subheader("Priority Score Progression")
+    if is_weighted_scheduler:
+        st.subheader("Priority Score Progression")
 
-    def _score_at(request_obj: DocumentRequest, at_time: Optional[datetime]) -> Optional[float]:
-        if at_time is None:
-            return None
-        original_state = (
-            request_obj.completeness_of_requirements,
-            request_obj.payment_status,
-            request_obj.requirements_stage,
-            request_obj.priority_score,
-        )
-        try:
-            return request_obj.calculate_priority(
-                at_time,
-                engine.priority_weights,
-                engine.workday_minutes,
-            )
-        finally:
-            (
+        def _score_at(request_obj: DocumentRequest, at_time: Optional[datetime]) -> Optional[float]:
+            if at_time is None:
+                return None
+            original_state = (
                 request_obj.completeness_of_requirements,
                 request_obj.payment_status,
                 request_obj.requirements_stage,
                 request_obj.priority_score,
-            ) = original_state
+            )
+            try:
+                return request_obj.calculate_priority(
+                    at_time,
+                    engine.priority_weights,
+                    engine.workday_minutes,
+                )
+            finally:
+                (
+                    request_obj.completeness_of_requirements,
+                    request_obj.payment_status,
+                    request_obj.requirements_stage,
+                    request_obj.priority_score,
+                ) = original_state
 
-    stage_points = [
-        ("Submitted", selected_req.submission_time),
-        ("Requirements Partial", getattr(selected_req, "requirements_partial_time", None)),
-        ("Requirements Complete", getattr(selected_req, "requirements_complete_time", None)),
-        ("Payment", getattr(selected_req, "payment_time", None)),
-        ("Ready", getattr(selected_req, "ready_time", None)),
-        ("Assigned", selected_req.assignment_time),
-    ]
-    stage_rows = []
-    for label, ts in stage_points:
-        if ts is None:
-            continue
-        score_value = _score_at(selected_req, ts)
-        stage_rows.append(
-            {
-                "Stage": label,
-                "Time": format_compact_datetime(ts),
-                "Priority Score": round(float(score_value or 0.0), 4),
-            }
-        )
-    if stage_rows:
-        stage_df = pd.DataFrame(stage_rows)
-        render_theme_table(stage_df, height_px=220)
+        stage_points = [
+            ("Submitted", selected_req.submission_time),
+            ("Requirements Partial", getattr(selected_req, "requirements_partial_time", None)),
+            ("Requirements Complete", getattr(selected_req, "requirements_complete_time", None)),
+            ("Payment", getattr(selected_req, "payment_time", None)),
+            ("Ready", getattr(selected_req, "ready_time", None)),
+            ("Assigned", selected_req.assignment_time),
+        ]
+        stage_rows = []
+        for label, ts in stage_points:
+            if ts is None:
+                continue
+            score_value = _score_at(selected_req, ts)
+            stage_rows.append(
+                {
+                    "Stage": label,
+                    "Time": format_compact_datetime(ts),
+                    "Priority Score": round(float(score_value or 0.0), 4),
+                }
+            )
+        if stage_rows:
+            stage_df = pd.DataFrame(stage_rows)
+            render_theme_table(stage_df, height_px=220)
+        else:
+            st.write("No stage timestamps available.")
     else:
-        st.write("No stage timestamps available.")
+        st.info("Priority score progression is disabled for the FCFS scheduler.")
 
     st.subheader("Request Lifecycle Timeline")
 
