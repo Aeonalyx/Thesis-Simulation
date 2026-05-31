@@ -29,7 +29,9 @@ from backend1.scheduler_engine1 import (  # noqa: E402
     COLLEGES,
     DOCUMENT_COMPLEXITY,
     PRIORITY_WEIGHTS,
+    PRIORITY_ROC_WEIGHTS_FULL,
     COLLEGE_PRIORITY,
+    _soft_cap,
     COMPLETENESS_LEVELS,
     REQUESTER_PRIORITY,
     REQUESTER_PRIORITY_MAX,
@@ -47,6 +49,7 @@ CRITERIA_LABELS = {
     "requester_status": "Requester status",
     "college_affiliation": "College affiliation",
     "payment_status": "Payment status",
+    "urgency": "Urgency",
 }
 
 
@@ -56,6 +59,14 @@ def format_criterion_label(key: str) -> str:
 
 def weight_state_key(key: str) -> str:
     return f"w_{key}"
+
+
+def active_criteria() -> List[str]:
+    """Return the list of criteria to render in the UI based on urgency toggle."""
+    keys = list(CRITERIA_KEYS)
+    if st.session_state.get("urgency", False) and "urgency" not in keys:
+        keys = keys + ["urgency"]
+    return keys
 
 
 # ============================================================================
@@ -651,7 +662,7 @@ def collect_ui_config() -> Dict:
         "seed_mode": st.session_state.seed_mode,
         "manual_seed": int(st.session_state.manual_seed),
         "weights_raw": {
-            key: int(st.session_state[weight_state_key(key)]) for key in CRITERIA_KEYS
+            key: int(st.session_state.get(weight_state_key(key), 0)) for key in active_criteria()
         },
     }
 
@@ -696,15 +707,21 @@ def apply_ui_config(config: Dict):
     st.session_state.manual_seed = int(config.get("manual_seed", st.session_state.manual_seed))
 
     raw = config.get("weights_raw", {})
+    # Apply raw weights for canonical criteria
     for key in CRITERIA_KEYS:
         state_key = weight_state_key(key)
-        st.session_state[state_key] = int(raw.get(key, st.session_state[state_key]))
+        st.session_state[state_key] = int(raw.get(key, st.session_state.get(state_key, 50)))
+    # If incoming config included urgency, apply it too
+    if "urgency" in raw:
+        st.session_state[weight_state_key("urgency")] = int(raw.get("urgency", st.session_state.get(weight_state_key("urgency"), 50)))
 
 
 def normalized_weights_from_ui() -> Dict[str, float]:
-    raw = {key: float(st.session_state[weight_state_key(key)]) for key in CRITERIA_KEYS}
+    keys = active_criteria()
+    raw = {key: float(st.session_state.get(weight_state_key(key), 0.0)) for key in keys}
     total = sum(raw.values())
     if total <= 0:
+        # Fallback to default PRIORITY_WEIGHTS (module import from backend)
         return PRIORITY_WEIGHTS.copy()
     return {key: value / total for key, value in raw.items()}
 
@@ -731,7 +748,10 @@ def build_engine_and_run_config() -> Dict:
             "num_staff": int(st.session_state.num_staff),
             "quota_limit": int(st.session_state.quota_limit),
         },
-        "priority_weights": weights,
+        # If urgency is enabled but all other sliders are zero (user didn't set others),
+        # avoid passing a single-key weights dict that would force urgency=1 and others=0.
+        # Let the engine pick the appropriate ROC defaults instead by passing None.
+        "priority_weights": None if (st.session_state.urgency and sum(weights.get(k, 0.0) for k in weights if k != "urgency") <= 1e-9) else weights,
         "random_seed": manual_seed,
         "work_start": st.session_state.work_start_time.strftime("%H:%M"),
         "work_end": st.session_state.work_end_time.strftime("%H:%M"),
@@ -1078,7 +1098,19 @@ else:
 
 if st.session_state.scheduler_type == "WEIGHTED":
     st.sidebar.subheader("Weighted Priority")
-    for key in CRITERIA_KEYS:
+    # Ensure session_state has entries for any active criteria (including urgency)
+    for key in active_criteria():
+        state_key = weight_state_key(key)
+        if state_key not in st.session_state:
+            # Use PRIORITY_ROC_WEIGHTS_FULL for urgency to get the correct ROC default
+            if key == "urgency":
+                default_raw = PRIORITY_ROC_WEIGHTS_FULL.get(key, 0.02)
+            else:
+                default_raw = PRIORITY_WEIGHTS.get(key, 0.0)
+            default_val = int(default_raw * 100) if isinstance(default_raw, (int, float)) else 50
+            st.session_state[state_key] = default_val
+
+    for key in active_criteria():
         st.sidebar.slider(
             f"Weight: {format_criterion_label(key)}",
             min_value=0,
@@ -1791,6 +1823,7 @@ else:
             f"**Completeness:** {float(getattr(selected_req, 'completeness_of_requirements', 0.0)):.2f}"
         )
         st.write(f"**Requester Status:** {getattr(selected_req, 'requester_type', '-')}")
+        st.write(f"**Urgency (generated):** {getattr(selected_req, 'urgency', '-')}")
         st.write(f"**Payment Status:** {getattr(selected_req, 'payment_status', '-')}")
         st.write(f"**Priority Score:** {float(getattr(selected_req, 'priority_score', 0.0)):.4f}")
         st.write(f"**Assigned Staff:** {format_staff_label(selected_req.assigned_staff, staff_college_map)}")
@@ -1831,10 +1864,13 @@ else:
                 request_obj.priority_score,
             )
             try:
+                # Ensure we pass the engine's urgency flag so the same
+                # weighting behavior is applied when computing scores.
                 return request_obj.calculate_priority(
                     at_time,
                     engine.priority_weights,
                     engine.workday_minutes,
+                    urgency=engine.urgency,
                 )
             finally:
                 (
@@ -1867,6 +1903,70 @@ else:
         if stage_rows:
             stage_df = pd.DataFrame(stage_rows)
             render_theme_table(stage_df, height_px=220)
+            # Debug breakdown: show engine weights and per-criterion contributions
+            with st.expander("Debug: weight & contribution breakdown", expanded=False):
+                st.write("Engine priority_weights:")
+                st.write(engine.priority_weights)
+
+                contrib_rows = []
+                # Recompute per-stage contributions using same logic as calculate_priority
+                for label, ts in stage_points:
+                    if ts is None:
+                        continue
+                    # compute feature scores
+                    selected_req.update_status(ts)
+                    completeness_norm = max(0.0, min(float(selected_req.completeness_of_requirements), 1.0))
+                    requester_raw = REQUESTER_PRIORITY.get(selected_req.requester_type, 3)
+                    requester_norm = requester_raw / max(float(REQUESTER_PRIORITY_MAX), 1.0)
+                    waiting_minutes = max(0.0, (ts - selected_req.submission_time).total_seconds() / 60.0)
+                    submission_norm = _soft_cap(waiting_minutes, max(float(engine.workday_minutes * 2), 1.0))
+                    base_duration, _ = _duration_to_schedule(DOCUMENT_COMPLEXITY.get(selected_req.document_type, 1))
+                    complexity_days = max(base_duration.total_seconds() / 86400.0, 1e-6)
+                    doc_norm = 1.0 / (1.0 + complexity_days)
+                    college_norm = float(COLLEGE_PRIORITY.get(selected_req.college, 0.5))
+                    payment_norm = 0.0
+                    if isinstance(selected_req.payment_status, str):
+                        status_text = selected_req.payment_status.strip().lower()
+                        if status_text in {"paid", "settled", "complete", "cleared", "yes", "y", "true", "1"}:
+                            payment_norm = 1.0
+                    else:
+                        payment_norm = 1.0 if bool(selected_req.payment_status) else 0.0
+                    urgency_norm = float(selected_req.urgency) / 10.0 if engine.urgency else 0.0
+
+                    scores_map = {
+                        "completeness_of_requirements": completeness_norm,
+                        "submission_time": submission_norm,
+                        "document_type": doc_norm,
+                        "requester_status": requester_norm,
+                        "college_affiliation": college_norm,
+                        "payment_status": payment_norm,
+                        "urgency": urgency_norm,
+                    }
+
+                    total_raw = 0.0
+                    for k, w in engine.priority_weights.items():
+                        if k == "urgency" and not engine.urgency:
+                            continue
+                        val = scores_map.get(k, 0.0)
+                        contrib = float(w) * float(val)
+                        total_raw += contrib
+                        contrib_rows.append(
+                            {
+                                "Stage": label,
+                                "Criterion": k,
+                                "Weight": round(float(w), 6),
+                                "Feature": round(float(val), 6),
+                                "Contribution": round(float(contrib), 6),
+                            }
+                        )
+
+                    contrib_rows.append(
+                        {"Stage": label, "Criterion": "TOTAL", "Weight": "-", "Feature": "-", "Contribution": round(total_raw, 6)}
+                    )
+
+                if contrib_rows:
+                    contrib_df = pd.DataFrame(contrib_rows)
+                    render_theme_table(contrib_df)
         else:
             st.write("No stage timestamps available.")
 
