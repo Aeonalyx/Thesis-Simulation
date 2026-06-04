@@ -2026,9 +2026,6 @@ if st.session_state.comparison_df is not None and comparison_details:
             apply_plot_theme(fig_diff)
             st.plotly_chart(fig_diff, use_container_width=True)
 
-            variant_labels = [
-                f"{row['scheduler']} | {row['allocator']}" for _, row in diff_df.iterrows()
-            ]
             selected_variant = st.selectbox(
                 "Inspect Variant",
                 variant_labels,
