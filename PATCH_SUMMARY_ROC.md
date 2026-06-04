@@ -84,4 +84,4 @@ from backend1.roc_utils import PRIORITY_ROC_WEIGHTS
 
 
 ### More to add
-- add visual for document request spread, also disable priority score progression table when fcfs is selected as scheduler. custom request rather than generated? and the request must be inserted based on setup (time progression, when it was submitted, etc) and is highlighted to show where it would end up in the playback
+- Custom request rather than generated? and the request must be inserted based on setup (time progression, when it was submitted, etc) and is highlighted to show where it would end up in the playback
