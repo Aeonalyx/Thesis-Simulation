@@ -14,12 +14,13 @@ import os
 import sys
 import time as tm
 from datetime import datetime, time
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import statistics
 import streamlit as st
 
 
@@ -354,41 +355,6 @@ SCHEDULER_LABELS = {
     "WEIGHTED": "Weighted (priority-based)",
 }
 ALLOCATOR_OPTIONS = ["college_based", "workload_based", "pooled", "quota_free"]
-ALLOCATOR_LABELS = {
-    "college_based": "College Based",
-    "workload_based": "Workload Based",
-    "pooled": "Pooled",
-    "quota_free": "Quota Free",
-}
-
-
-def humanize_option_label(value: str) -> str:
-    if not isinstance(value, str):
-        return str(value)
-    if value in SCHEDULER_LABELS:
-        return SCHEDULER_LABELS[value]
-    if value in ALLOCATOR_LABELS:
-        return ALLOCATOR_LABELS[value]
-    if value == "Variant":
-        return "Variant"
-    return value.replace("_", " ").title()
-
-
-def humanize_event_text(value: Any) -> str:
-    if value is None:
-        return ""
-    text = str(value).strip()
-    if not text:
-        return ""
-    return text.replace("_", " ").title()
-
-
-def format_variant_label(scheduler: str, allocator: str) -> str:
-    scheduler_label = SCHEDULER_LABELS.get(str(scheduler), str(scheduler))
-    allocator_label = ALLOCATOR_LABELS.get(
-        str(allocator), str(allocator).replace("_", " ").title()
-    )
-    return f"{scheduler_label} | {allocator_label}"
 
 SPEED_OPTIONS = {
     "0.25x": 1.20,
@@ -649,44 +615,25 @@ CHART_COLORWAY = ["#a855f7", "#7c3aed", "#22d3ee", "#c084fc", "#38bdf8", "#f472b
 
 
 def apply_plot_theme(fig: go.Figure):
-    labels_outside = st.session_state.get("labels_outside", True)
-    # Position legend outside (right) or above (center) depending on toggle
-    if labels_outside:
-        legend_cfg = dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#d9d2f0"), orientation="v", y=1, x=1.02, xanchor="left")
-        margins = dict(l=48, r=180, t=64, b=64)
-        x_title_standoff = 12
-        y_title_standoff = 12
-    else:
-        legend_cfg = dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#d9d2f0"), orientation="h", y=1.02, x=0.5, xanchor="center")
-        margins = dict(l=48, r=64, t=64, b=64)
-        x_title_standoff = 4
-        y_title_standoff = 4
-
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(28,22,46,0.92)",
         colorway=CHART_COLORWAY,
         font=dict(color="#ebe5ff", family="Plus Jakarta Sans, Segoe UI, sans-serif"),
-        legend=legend_cfg,
-        margin=margins,
-        autosize=True,
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#d9d2f0")),
     )
     fig.update_xaxes(
         showgrid=True,
         gridcolor="rgba(111,87,164,0.28)",
         zeroline=False,
         linecolor="rgba(130,105,190,0.45)",
-        automargin=True,
-        title_standoff=x_title_standoff,
     )
     fig.update_yaxes(
         showgrid=True,
         gridcolor="rgba(111,87,164,0.28)",
         zeroline=False,
         linecolor="rgba(130,105,190,0.45)",
-        automargin=True,
-        title_standoff=y_title_standoff,
     )
 
 
@@ -699,411 +646,6 @@ def render_theme_table(df: pd.DataFrame, height_px: int = 320):
         f'<div class="theme-table-wrap" style="max-height:{int(height_px)}px;">{table_html}</div>',
         unsafe_allow_html=True,
     )
-
-
-def run_variant_for_figure(scheduler_type: str, allocator_type: str) -> Optional[Dict]:
-    last_run = st.session_state.get("last_run_config")
-    if not last_run:
-        return None
-
-    engine_kwargs = dict(last_run.get("engine_kwargs", {}))
-    engine_kwargs["scheduler_type"] = scheduler_type
-    engine_kwargs["allocator_type"] = allocator_type
-    engine_kwargs["random_seed"] = int(
-        st.session_state.simulation_results.get("seed_used", st.session_state.manual_seed)
-    )
-
-    engine = SimulationEngine(**engine_kwargs)
-    return engine.run(custom_config=last_run.get("run_config", {}))
-
-
-def build_baseline_queue_dynamics_chart(event_log: List[Dict], variant_label: str = "") -> go.Figure:
-    if not event_log:
-        return go.Figure()
-
-    sorted_log = sorted(
-        event_log,
-        key=lambda ev: (
-            parse_event_time(str(ev.get("time", ""))),
-            ev.get("sequence", 0),
-        ),
-    )
-
-    active_requests = set()
-    queue_sizes = []
-    avg_waits = []
-    time_points = []
-    observed_waits = []
-
-    for event in sorted_log:
-        event_type = str(event.get("event_type", "")).upper()
-        request_id = event.get("request_id")
-
-        if event_type == "ARRIVAL" and request_id:
-            active_requests.add(request_id)
-        elif event_type == "ASSIGN" and request_id:
-            active_requests.discard(request_id)
-            wait_hours = float(event.get("queue_wait_hours", 0.0) or 0.0)
-            observed_waits.append(wait_hours)
-
-        current_time = parse_event_time(str(event.get("time", "")))
-        time_points.append(current_time)
-        queue_sizes.append(len(active_requests))
-        avg_waits.append(round(sum(observed_waits) / len(observed_waits), 2) if observed_waits else 0.0)
-
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(
-        go.Scatter(
-            x=time_points,
-            y=queue_sizes,
-            mode="lines+markers",
-            name="Queue Size",
-            marker=dict(size=6),
-            line=dict(width=2, color="#a855f7"),
-        ),
-        secondary_y=False,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=time_points,
-            y=avg_waits,
-            mode="lines+markers",
-            name="Avg Waiting Time (h)",
-            marker=dict(size=6),
-            line=dict(width=2, color="#22d3ee"),
-        ),
-        secondary_y=True,
-    )
-
-    chart_title = "Queue Dynamics and Waiting Time Trend"
-    if variant_label:
-        chart_title = f"{chart_title} — {variant_label}"
-
-    fig.update_layout(
-        title=chart_title,
-        height=420,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    )
-    fig.update_xaxes(title_text="Simulation Time")
-    fig.update_yaxes(title_text="Queue Size", secondary_y=False)
-    fig.update_yaxes(title_text="Average Queue Wait (h)", secondary_y=True)
-    apply_plot_theme(fig)
-    return fig
-
-
-def build_weighted_priority_distribution_chart(requests: List[Dict], variant_label: str = "") -> go.Figure:
-    rows = []
-    for req in requests:
-        if not req:
-            continue
-
-        if isinstance(req, dict):
-            score = float(req.get("priority_score", 0.0) or 0.0)
-            assigned = bool(req.get("assignment_time"))
-        else:
-            score = float(getattr(req, "priority_score", 0.0) or 0.0)
-            assigned = getattr(req, "assignment_time", None) is not None
-
-        rows.append(
-            {
-                "Priority Score": score,
-                "Status": "Assigned" if assigned else "Unassigned",
-            }
-        )
-
-    if not rows:
-        return go.Figure()
-
-    df = pd.DataFrame(rows)
-    chart_title = "Priority Score Distribution by Assignment Status"
-    if variant_label:
-        chart_title = f"{chart_title} — {variant_label}"
-
-    fig = px.histogram(
-        df,
-        x="Priority Score",
-        color="Status",
-        barmode="overlay",
-        nbins=20,
-        histnorm="percent",
-        title=chart_title,
-        color_discrete_map={"Assigned": "#a855f7", "Unassigned": "#22d3ee"},
-        labels={"Priority Score": "Priority Score", "Status": "Assignment Status"},
-        height=420,
-    )
-    fig.update_traces(opacity=0.75)
-    fig.update_layout(legend=dict(title="Request Status", orientation="h", y=1.02, x=0.5, xanchor="center"))
-    apply_plot_theme(fig)
-    return fig
-
-
-def build_variant_wait_balance_chart(compare_df: pd.DataFrame) -> go.Figure:
-    if compare_df is None or compare_df.empty:
-        return go.Figure()
-
-    df = compare_df.copy()
-    df["variant"] = df.apply(
-        lambda row: format_variant_label(row["scheduler"], row["allocator"]),
-        axis=1,
-    )
-
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(
-        go.Bar(
-            x=df["variant"],
-            y=df["avg_waiting_time_hours"],
-            name="Avg Waiting Time (h)",
-            marker_color="#a855f7",
-        ),
-        secondary_y=False,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=df["variant"],
-            y=df["staff_load_std"],
-            name="Staff Load Std Dev",
-            mode="lines+markers",
-            marker=dict(color="#22d3ee", size=8),
-            line=dict(width=2),
-        ),
-        secondary_y=True,
-    )
-
-    fig.update_layout(
-        title="Variant Wait Balance Comparison",
-        height=420,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    )
-    fig.update_xaxes(title_text="Variant")
-    fig.update_yaxes(title_text="Average Waiting Time (h)", secondary_y=False)
-    fig.update_yaxes(title_text="Staff Load Std Dev", secondary_y=True)
-    apply_plot_theme(fig)
-    return fig
-
-
-def build_workload_distribution_chart(compare_df: pd.DataFrame, title: str = "Workload Distribution Comparison") -> go.Figure:
-    if compare_df is None or compare_df.empty:
-        return go.Figure()
-
-    df = compare_df.copy()
-    df["variant"] = df.apply(
-        lambda row: format_variant_label(row["scheduler"], row["allocator"]),
-        axis=1,
-    )
-    fig = go.Figure(
-        data=[
-            go.Bar(
-                x=df["variant"],
-                y=df["staff_load_std"],
-                marker_color="#a855f7",
-                text=df["staff_load_std"],
-                textposition="outside",
-                customdata=df[["avg_waiting_time_hours"]],
-                hovertemplate="%{x}<br>Std Dev: %{y}<br>Avg Wait: %{customdata[0]} h<extra></extra>",
-            )
-        ]
-    )
-    fig.update_layout(
-        title="Workload Distribution by Variant",
-        height=420,
-        xaxis_title="Variant",
-        yaxis_title="Staff Load Std Dev",
-    )
-    apply_plot_theme(fig)
-    return fig
-
-
-def build_workload_imbalance_chart(compare_df: pd.DataFrame, title: str = "Workload Imbalance and Utilization Variance") -> go.Figure:
-    if compare_df is None or compare_df.empty:
-        return go.Figure()
-
-    df = compare_df.copy()
-    df["variant"] = df.apply(
-        lambda row: format_variant_label(row["scheduler"], row["allocator"]),
-        axis=1,
-    )
-
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(
-        go.Bar(
-            x=df["variant"],
-            y=df["staff_load_std"],
-            name="Staff Load Std Dev",
-            marker_color="#a855f7",
-        ),
-        secondary_y=False,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=df["variant"],
-            y=df["staff_load_cv"],
-            name="Staff Load CV",
-            mode="lines+markers",
-            marker=dict(color="#22d3ee", size=8),
-            line=dict(width=2),
-        ),
-        secondary_y=True,
-    )
-    fig.update_layout(
-        title="Workload Imbalance by Variant",
-        height=420,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    )
-    fig.update_xaxes(title_text="Variant")
-    fig.update_yaxes(title_text="Staff Load Std Dev", secondary_y=False)
-    fig.update_yaxes(title_text="Staff Load CV", secondary_y=True)
-    apply_plot_theme(fig)
-    return fig
-
-
-def build_variant_summary_chart(compare_df: pd.DataFrame, title: str = "Summary of Variant Performance") -> go.Figure:
-    if compare_df is None or compare_df.empty:
-        return go.Figure()
-
-    df = compare_df.copy()
-    df["variant"] = df.apply(
-        lambda row: format_variant_label(row["scheduler"], row["allocator"]),
-        axis=1,
-    )
-    summary_df = df.melt(
-        id_vars=["variant"],
-        value_vars=["avg_waiting_time_hours", "throughput_req_per_day", "staff_load_std"],
-        var_name="metric",
-        value_name="value",
-    )
-    metric_names = {
-        "avg_waiting_time_hours": "Avg Waiting Time (h)",
-        "throughput_req_per_day": "Throughput (req/day)",
-        "staff_load_std": "Staff Load Std Dev",
-    }
-    summary_df["metric"] = summary_df["metric"].map(metric_names).fillna(summary_df["metric"])
-
-    fig = px.bar(
-        summary_df,
-        x="variant",
-        y="value",
-        color="metric",
-        barmode="group",
-        title=title,
-        height=420,
-        labels={"variant": "Variant", "value": "Metric Value", "metric": "Metric"},
-    )
-    apply_plot_theme(fig)
-    return fig
-
-
-def run_scenario_comparison_for_current_variant() -> List[Dict]:
-    last_run = st.session_state.get("last_run_config")
-    if not last_run or not st.session_state.simulation_results:
-        return []
-
-    engine_kwargs = dict(last_run.get("engine_kwargs", {}))
-    engine_kwargs["random_seed"] = int(
-        st.session_state.simulation_results.get("seed_used", st.session_state.manual_seed)
-    )
-
-    base_config = dict(last_run.get("run_config", {}))
-    absent_count = max(1, int(base_config.get("num_absent_staff", 1)))
-    imbalance_value = max(20, int(base_config.get("imbalance_factor", 40)))
-
-    scenario_specs = [
-        (
-            "Normal",
-            {
-                "scenario": "baseline",
-                "enable_absence": False,
-                "imbalance_factor": 0,
-                "num_absent_staff": 0,
-            },
-        ),
-        (
-            "Peak",
-            {
-                "scenario": "peak_period",
-                "enable_absence": False,
-                "imbalance_factor": 0,
-                "num_absent_staff": 0,
-            },
-        ),
-        (
-            "Absence",
-            {
-                "scenario": "baseline",
-                "enable_absence": True,
-                "imbalance_factor": 0,
-                "num_absent_staff": absent_count,
-            },
-        ),
-        (
-            "Imbalance",
-            {
-                "scenario": "baseline",
-                "enable_absence": False,
-                "imbalance_factor": imbalance_value,
-                "num_absent_staff": 0,
-            },
-        ),
-    ]
-
-    scenario_results: List[Dict] = []
-    for label, config_override in scenario_specs:
-        custom_config = dict(base_config)
-        custom_config.update(config_override)
-        engine = SimulationEngine(**engine_kwargs)
-        result = engine.run(custom_config=custom_config)
-        staff_load_values = list(result.get("staff_load", {}).values())
-        staff_std = float(pd.Series(staff_load_values).std(ddof=0)) if staff_load_values else 0.0
-        staff_mean = float(pd.Series(staff_load_values).mean()) if staff_load_values else 0.0
-        staff_cv = round(staff_std / max(staff_mean, 1.0), 4) if staff_mean else 0.0
-        scenario_results.append(
-            {
-                "scenario": label,
-                "avg_waiting_time_hours": result.get("avg_waiting_time_hours", 0.0),
-                "staff_load_std": round(staff_std, 2),
-                "staff_load_cv": staff_cv,
-                "throughput_req_per_day": result.get("throughput_req_per_day", 0.0),
-            }
-        )
-
-    return scenario_results
-
-
-def build_scenario_performance_chart(scenario_rows: List[Dict]) -> go.Figure:
-    if not scenario_rows:
-        return go.Figure()
-
-    scenario_df = pd.DataFrame(scenario_rows)
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(
-        go.Bar(
-            x=scenario_df["scenario"],
-            y=scenario_df["avg_waiting_time_hours"],
-            name="Avg Waiting Time (h)",
-            marker_color="#a855f7",
-        ),
-        secondary_y=False,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=scenario_df["scenario"],
-            y=scenario_df["staff_load_std"],
-            name="Staff Load Std Dev",
-            mode="lines+markers",
-            marker=dict(color="#22d3ee", size=8),
-            line=dict(width=2),
-        ),
-        secondary_y=True,
-    )
-    fig.update_layout(
-        title="",
-        height=420,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    )
-    fig.update_xaxes(title_text="Scenario")
-    fig.update_yaxes(title_text="Avg Waiting Time (h)", secondary_y=False)
-    fig.update_yaxes(title_text="Staff Load Std Dev", secondary_y=True)
-    apply_plot_theme(fig)
-    return fig
 
 
 def routing_events(event_log: List[Dict]) -> List[Dict]:
@@ -1142,7 +684,7 @@ def playback_state(decisions: List[Dict], step: int) -> Dict:
                     "Staff": item.get("staff_id"),
                     "Priority Score": item.get("priority_score", 0.0),
                     "Queue Wait (h)": item.get("queue_wait_hours", "-"),
-                    "Mode": humanize_event_text(item.get("details", "")),
+                    "Mode": item.get("details", ""),
                 }
             )
             staff_key = item.get("staff_id") or "UNASSIGNED"
@@ -1154,7 +696,7 @@ def playback_state(decisions: List[Dict], step: int) -> Dict:
                     "Request": item.get("request_id"),
                     "College": item.get("college"),
                     "Priority Score": item.get("priority_score", 0.0),
-                    "Reason": humanize_event_text(item.get("details", "")),
+                    "Reason": item.get("details", ""),
                 }
             )
 
@@ -1169,7 +711,390 @@ def playback_state(decisions: List[Dict], step: int) -> Dict:
     }
 
 
+def compute_workload_stats(staff_load: Dict[str, int]) -> Dict[str, float]:
+    counts = list(staff_load.values()) if staff_load else []
+    if not counts:
+        return {"mean": 0.0, "std": 0.0, "variance": 0.0}
+    mean_value = statistics.mean(counts)
+    std_value = statistics.pstdev(counts)
+    variance_value = statistics.pvariance(counts)
+    return {
+        "mean": mean_value,
+        "std": std_value,
+        "variance": variance_value,
+    }
+
+
+def build_queue_waiting_series(event_log: List[Dict]) -> pd.DataFrame:
+    rows = []
+    pending = set()
+    assign_waits = []
+
+    for event in sorted(event_log, key=lambda ev: (parse_event_time(str(ev["time"])), ev.get("sequence", 0))):
+        event_time = parse_event_time(str(event["time"]))
+        event_type = event.get("event_type")
+        request_id = event.get("request_id")
+
+        if event_type == "ARRIVAL" and request_id:
+            pending.add(request_id)
+        elif event_type == "ASSIGN" and request_id:
+            pending.discard(request_id)
+            assign_waits.append(float(event.get("queue_wait_hours", 0.0)))
+
+        avg_wait = float(sum(assign_waits) / len(assign_waits)) if assign_waits else 0.0
+        rows.append(
+            {
+                "time": event_time,
+                "frame": event.get("frame", len(rows)),
+                "event_type": event_type,
+                "queue_length": len(pending),
+                "avg_wait_hours": avg_wait,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def build_weighted_score_df(results: Dict) -> pd.DataFrame:
+    generated = results.get("generated_requests", [])
+    completed_ids = {req.get("request_id") for req in results.get("completed_requests", [])}
+    rows = []
+    for req in generated:
+        score = float(req.get("priority_score", 0.0))
+        rows.append(
+            {
+                "request_id": req.get("request_id"),
+                "document_type": req.get("document_type", "Unknown"),
+                "priority_score": score,
+                "selected": "Yes" if req.get("request_id") in completed_ids else "No",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_scenario_comparison_df(engine_kwargs: Dict, run_config: Dict) -> pd.DataFrame:
+    scenario_keys = ["baseline", "peak_period", "staff_absence", "workload_imbalance"]
+    rows = []
+
+    for scenario in scenario_keys:
+        config = run_config.copy()
+        config["scenario"] = scenario
+        scenario_engine = SimulationEngine(**engine_kwargs)
+        scenario_results = scenario_engine.run(custom_config=config)
+        workload_stats = compute_workload_stats(scenario_results.get("staff_load", {}))
+
+        rows.append(
+            {
+                "scenario": scenario,
+                "avg_waiting_time_hours": scenario_results.get("avg_waiting_time_hours", 0.0),
+                "throughput_req_per_day": scenario_results.get("throughput_req_per_day", 0.0),
+                "workload_variance": workload_stats["variance"],
+                "workload_std": workload_stats["std"],
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def format_variant_label(scheduler: str, allocator: str) -> str:
+    return f"{scheduler.upper()} | {allocator.replace('_', ' ').title()}"
+
+
+def build_staff_load_comparison_df(compare_details: List[Dict], variant_filters: List[tuple]) -> pd.DataFrame:
+    rows = []
+    for item in compare_details:
+        key = (item["scheduler"], item["allocator"])
+        if key not in variant_filters:
+            continue
+        staff_load = item.get("staff_load", {})
+        for staff_id, count in staff_load.items():
+            rows.append(
+                {
+                    "variant": format_variant_label(item["scheduler"], item["allocator"]),
+                    "staff_id": staff_id,
+                    "load": count,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def build_comparison_dashboard_table(compare_df: pd.DataFrame) -> go.Figure:
+    fig = go.Figure(
+        data=[
+            go.Table(
+                header=dict(
+                    values=[
+                        "Variant",
+                        "Avg Wait (h)",
+                        "Throughput (req/day)",
+                        "Avg Turnaround (d)",
+                        "Workload Std"
+                    ],
+                    fill_color="#4c1d95",
+                    font=dict(color="white", size=12),
+                ),
+                cells=dict(
+                    values=[
+                        compare_df["variant"].tolist(),
+                        compare_df["avg_waiting_time_hours"].tolist(),
+                        compare_df["throughput_req_per_day"].tolist(),
+                        compare_df["avg_turnaround_days"].tolist(),
+                        compare_df.get("workload_std", pd.Series([0] * len(compare_df))).tolist(),
+                    ],
+                    fill_color="#140c23",
+                    font=dict(color="white", size=11),
+                ),
+            )
+        ]
+    )
+    fig.update_layout(height=380, margin=dict(l=20, r=20, t=20, b=20))
+    return fig
+
+
+def build_variant_label_column(compare_df: pd.DataFrame) -> pd.DataFrame:
+    compare_df = compare_df.copy()
+    compare_df["variant"] = compare_df.apply(
+        lambda row: format_variant_label(row["scheduler"], row["allocator"]),
+        axis=1,
+    )
+    return compare_df
+
+
 def on_playback_slider_change():
+    """Sync slider position to internal request-step state and pause autoplay."""
+    st.session_state.playback_playing = False
+    st.session_state.playback_frame = max(0, int(st.session_state.playback_frame_ui) - 1)
+
+
+def build_queue_waiting_chart(df: pd.DataFrame) -> go.Figure:
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(
+        go.Scatter(
+            x=df["time"],
+            y=df["queue_length"],
+            mode="lines+markers",
+            name="Queue Length",
+            line=dict(color="#a855f7", width=2),
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df["time"],
+            y=df["avg_wait_hours"],
+            mode="lines",
+            name="Avg Wait Hours",
+            line=dict(color="#22d3ee", width=2, dash="dash"),
+        ),
+        secondary_y=True,
+    )
+    fig.update_layout(
+        title="Queue Length and Waiting Time Trend",
+        xaxis_title="Simulation Time",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        height=420,
+    )
+    fig.update_yaxes(title_text="Queue Length", secondary_y=False)
+    fig.update_yaxes(title_text="Avg Wait (h)", secondary_y=True)
+    apply_plot_theme(fig)
+    return fig
+
+
+def build_staff_load_comparison_chart(df: pd.DataFrame) -> go.Figure:
+    fig = px.bar(
+        df,
+        x="staff_id",
+        y="load",
+        color="variant",
+        barmode="group",
+        title="Staff Request Load: FCFS College vs FCFS Workload",
+        labels={"staff_id": "Staff ID", "load": "Assigned Requests"},
+        height=420,
+    )
+    fig.update_layout(legend_title_text="Variant")
+    apply_plot_theme(fig)
+    return fig
+
+
+def build_priority_distribution_chart(df: pd.DataFrame) -> go.Figure:
+    fig = px.histogram(
+        df,
+        x="priority_score",
+        color="selected",
+        nbins=30,
+        barmode="overlay",
+        title="Weighted Priority Score Distribution",
+        labels={"priority_score": "Priority Score", "selected": "Assigned"},
+        height=420,
+    )
+    fig.update_traces(opacity=0.75)
+    apply_plot_theme(fig)
+    return fig
+
+
+def build_comparative_performance_chart(compare_df: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=compare_df["variant"],
+            y=compare_df["avg_waiting_time_hours"],
+            name="Avg Wait (h)",
+            marker_color="#a855f7",
+        )
+    )
+    if "workload_std" in compare_df.columns:
+        fig.add_trace(
+            go.Bar(
+            x=compare_df["variant"],
+            y=compare_df["workload_std"],
+            name="Workload Std",
+            marker_color="#22d3ee",
+        ))
+    fig.update_layout(
+        title="Comparative Performance Overview",
+        xaxis_title="Variant",
+        yaxis_title="Value",
+        barmode="group",
+        height=420,
+    )
+    apply_plot_theme(fig)
+    return fig
+
+
+def build_scenario_comparison_chart(df: pd.DataFrame) -> go.Figure:
+    fig = make_subplots(rows=1, cols=3, subplot_titles=["Avg Wait (h)", "Workload Variance", "Throughput (req/day)"], shared_xaxes=True)
+    fig.add_trace(
+        go.Bar(x=df["scenario"], y=df["avg_waiting_time_hours"], name="Avg Wait (h)", marker_color="#a855f7"),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Bar(x=df["scenario"], y=df["workload_variance"], name="Workload Variance", marker_color="#22d3ee"),
+        row=1,
+        col=2,
+    )
+    fig.add_trace(
+        go.Bar(x=df["scenario"], y=df["throughput_req_per_day"], name="Throughput", marker_color="#38bdf8"),
+        row=1,
+        col=3,
+    )
+    fig.update_layout(title="Scenario-Based Performance Analysis", height=420, showlegend=False)
+    apply_plot_theme(fig)
+    return fig
+
+
+def build_dashboard_summary_chart(results: Dict, compare_df: Optional[pd.DataFrame] = None) -> go.Figure:
+    current_values = [
+        f"{results.get('avg_waiting_time_hours', 0.0):.2f}",
+        f"{results.get('avg_turnaround_days', 0.0):.2f}",
+        f"{results.get('throughput_req_per_day', 0.0):.2f}",
+        f"{results.get('total_processed', 0):d}",
+    ]
+    header = ["Metric", "Current Run"]
+    cells = [
+        ["Avg Wait (h)", "Avg Turnaround (d)", "Throughput (req/day)", "Total Processed"],
+        current_values,
+    ]
+    if compare_df is not None:
+        header.append("Baseline Delta")
+        baseline_row = compare_df[compare_df["variant"].str.contains("Fcfs | College Based", case=False)]
+        if not baseline_row.empty:
+            baseline_values = [
+                f"{baseline_row.iloc[0].get('delta_wait_vs_baseline', 0.0):.2f}",
+                f"{baseline_row.iloc[0].get('delta_turnaround_vs_baseline', 0.0):.2f}",
+                f"{baseline_row.iloc[0].get('delta_throughput_vs_baseline', 0.0):.2f}",
+                "-",
+            ]
+        else:
+            baseline_values = ["-", "-", "-", "-"]
+        cells.append(baseline_values)
+
+    fig = go.Figure(
+        data=[
+            go.Table(
+                header=dict(values=header, fill_color="#4c1d95", font=dict(color="white", size=12)),
+                cells=dict(values=cells, fill_color="#140c23", font=dict(color="white", size=11)),
+            )
+        ]
+    )
+    fig.update_layout(height=340, margin=dict(l=20, r=20, t=20, b=20))
+    return fig
+
+
+def build_variant_comparison_df(compare_df: pd.DataFrame) -> pd.DataFrame:
+    df = compare_df.copy()
+    if "variant" not in df.columns:
+        df = build_variant_label_column(df)
+    return df
+
+
+def build_comparison_label(allocator: str) -> str:
+    return allocator.replace("_", " ").title()
+
+
+def build_variant_comparison_title(scheduler: str, allocator: str) -> str:
+    return f"{scheduler.upper()} with {allocator.replace('_', ' ').title()}"
+
+
+def safe_to_float(value):
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+def build_event_label(event):
+    return f"{event.get('event_type')} @ {event.get('time')}"
+
+
+def build_queue_length_chart(df: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df["time"],
+            y=df["queue_length"],
+            mode="lines+markers",
+            name="Queue Length",
+            line=dict(color="#a855f7", width=2),
+        )
+    )
+    fig.update_layout(
+        title="Queue Length Growth Over Time",
+        xaxis_title="Time",
+        yaxis_title="Queue Length",
+        height=420,
+    )
+    apply_plot_theme(fig)
+    return fig
+
+
+def build_waiting_trend_chart(df: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df["time"],
+            y=df["avg_wait_hours"],
+            mode="lines+markers",
+            name="Avg Wait Hours",
+            line=dict(color="#22d3ee", width=2),
+        )
+    )
+    fig.update_layout(
+        title="Waiting Time Trend Over Simulation Steps",
+        xaxis_title="Time",
+        yaxis_title="Avg Wait (h)",
+        height=420,
+    )
+    apply_plot_theme(fig)
+    return fig
+
+
+def build_workload_variance_table(compare_df: pd.DataFrame) -> pd.DataFrame:
+    if "workload_std" not in compare_df.columns:
+        return compare_df
+    display_df = compare_df.copy()
+    display_df["variant"] = display_df.apply(lambda row: format_variant_label(row["scheduler"], row["allocator"]), axis=1)
+    return display_df[["variant", "avg_waiting_time_hours", "throughput_req_per_day", "workload_std"]]
     """Sync slider position to internal request-step state and pause autoplay."""
     st.session_state.playback_playing = False
     st.session_state.playback_frame = max(0, int(st.session_state.playback_frame_ui) - 1)
@@ -1258,12 +1183,7 @@ st.sidebar.selectbox(
     key="scheduler_type",
     format_func=lambda value: SCHEDULER_LABELS.get(value, value),
 )
-st.sidebar.selectbox(
-    "Allocator",
-    ALLOCATOR_OPTIONS,
-    key="allocator_type",
-    format_func=lambda value: ALLOCATOR_LABELS.get(value, value.replace("_", " ").title()),
-)
+st.sidebar.selectbox("Allocator", ALLOCATOR_OPTIONS, key="allocator_type")
 
 st.sidebar.subheader("Capacity and Policy")
 st.sidebar.slider(
@@ -1409,7 +1329,7 @@ st.markdown(
     <div class="hero-band">
         <div>
             <p class="hero-kicker">Simulation Snapshot</p>
-            <p class="hero-title">Scheduler: {SCHEDULER_LABELS.get(results.get('scheduler_type'), results.get('scheduler_type'))} | Allocator: {ALLOCATOR_LABELS.get(results.get('allocator_type'), str(results.get('allocator_type')).replace('_', ' ').title())}</p>
+            <p class="hero-title">Scheduler: {results.get('scheduler_type')} | Allocator: {results.get('allocator_type')}</p>
             <p class="hero-sub">Seed: {seed_used} | Mode: Custom sliders</p>
         </div>
         <div class="hero-pill">Ready for playback</div>
@@ -1583,22 +1503,19 @@ else:
         for row in pending_queue_rows:
             row.pop("_sort_submission", None)
 
-        card1, card2, card3, card4, card5 = st.columns([1.5, 1, 1, 1, 1])
+        card1, card2, card3, card4, card5 = st.columns(5)
         card1.metric("Simulation Clock", current_time.strftime("%Y-%m-%d %H:%M"))
         card2.metric("Current Request Step", f"{st.session_state.playback_frame + 1}/{max_step + 1}")
         card3.metric("Processed Decisions", frame_data["processed_count"])
         card4.metric("Assigned So Far", frame_data["assigned_count"])
         card5.metric("Queue Size Now", len(pending_queue_rows) + frame_data["waiting_count"])
 
-        routing_event_label = str(current_event.get("event_type", "")).replace("_", " ").title()
-        routing_detail_label = str(current_event.get("details", "")).replace("_", " ").title()
-
         st.markdown(
             "**Current Routing Decision:** "
-            f"{routing_event_label} | "
+            f"{current_event.get('event_type')} | "
             f"Request={current_event.get('request_id')} | "
             f"Staff={format_staff_label(current_event.get('staff_id'), staff_college_map)} | "
-            f"Details={routing_detail_label}"
+            f"Details={current_event.get('details')}"
         )
 
         st.subheader("Staff Capacity View")
@@ -1767,54 +1684,69 @@ with k5:
 if results.get("absent_staff"):
     st.warning("Absent staff: " + ", ".join(results.get("absent_staff", [])))
 
-variant_label = format_variant_label(
-    results.get('scheduler_type', ''), results.get('allocator_type', '')
-)
+# ============================================================================
+# RESULTS VISUALIZATIONS
+# ============================================================================
 
-st.header("Visualizations")
+st.header("Results Visualizations")
 
-st.markdown(
-    f"**Scheduler:** {humanize_option_label(results.get('scheduler_type'))}<br>"
-    f"**Allocator:** {humanize_option_label(results.get('allocator_type'))}"
-    , unsafe_allow_html=True,
-)
-
-# Toggle to place legend/labels outside the plot area for easier filtering
-labels_outside_default = st.session_state.get("labels_outside", True)
-st.checkbox(
-    "Show labels outside charts (useful for filtering)",
-    value=labels_outside_default,
-    key="labels_outside",
-)
-
-fig_41 = build_baseline_queue_dynamics_chart(results.get("event_log", []), variant_label)
-if fig_41.data:
-    st.plotly_chart(fig_41, use_container_width=True)
-else:
-    st.info("Queue dynamics are not available for the selected simulation.")
-
-if results.get("scheduler_type") == "WEIGHTED":
-    fig_43 = build_weighted_priority_distribution_chart(results.get("generated_requests", []), variant_label)
-    if fig_43.data:
-        st.plotly_chart(fig_43, use_container_width=True)
+if results.get("scheduler_type") == "FCFS" and results.get("allocator_type") == "college_based":
+    queue_df = build_queue_waiting_series(event_log)
+    if not queue_df.empty:
+        col1, col2 = st.columns(2)
+        with col1:
+            fig_queue = build_queue_length_chart(queue_df)
+            st.plotly_chart(fig_queue, use_container_width=True)
+        with col2:
+            fig_wait = build_waiting_trend_chart(queue_df)
+            st.plotly_chart(fig_wait, use_container_width=True)
     else:
-        st.info("Priority score distribution is not available for the selected simulation.")
+        st.info("Queue time series data is not available for the baseline run.")
 else:
-    st.info("Priority score distribution is only shown for the WEIGHTED scheduler.")
+    st.info("Switch to FCFS + college-based allocation to view the baseline queue growth visuals.")
 
-scenario_rows = run_scenario_comparison_for_current_variant()
-if scenario_rows:
-    st.subheader(f"Scenario-Specific Performance — {variant_label}")
-    st.info(
-        "Comparing waiting time and workload variance for Normal, Peak, Absence, and Imbalance conditions "
-        f"under {variant_label}."
-    )
-    fig_scenario = build_scenario_performance_chart(scenario_rows)
-    if fig_scenario.data:
-        st.plotly_chart(fig_scenario, use_container_width=True)
+if is_weighted_scheduler:
+    weighted_df = build_weighted_score_df(results)
+    if not weighted_df.empty:
+        fig_priority = build_priority_distribution_chart(weighted_df)
+        st.plotly_chart(fig_priority, use_container_width=True)
     else:
-        st.info("Scenario comparison data is not available for the current configuration.")
+        st.info("No weighted priority request data available for this run.")
+else:
+    st.info("Run a weighted priority scheduler to view weighted priority score distribution.")
 
+if st.button("Run Scenario-Based Analysis", use_container_width=True, key="run_scenario_analysis"):
+    if st.session_state.last_run_config:
+        st.session_state.scenario_comparison_df = build_scenario_comparison_df(
+            st.session_state.last_run_config["engine_kwargs"],
+            st.session_state.last_run_config["run_config"],
+        )
+    else:
+        st.warning("Run a simulation first to enable scenario comparison.")
+
+if st.session_state.get("scenario_comparison_df") is not None:
+    sc_df = st.session_state.scenario_comparison_df
+    fig_scenario = build_scenario_comparison_chart(sc_df)
+    st.plotly_chart(fig_scenario, use_container_width=True)
+
+if st.session_state.get("comparison_df") is not None:
+    compare_df = build_variant_comparison_df(st.session_state.comparison_df)
+    if not compare_df.empty:
+        fig_perf = build_comparative_performance_chart(compare_df)
+        st.plotly_chart(fig_perf, use_container_width=True)
+
+        workload_df = build_workload_variance_table(compare_df)
+        if not workload_df.empty:
+            fig_workload_comp = build_staff_load_comparison_chart(
+                build_staff_load_comparison_df(
+                    st.session_state.comparison_details,
+                    [("FCFS", "college_based"), ("FCFS", "workload_based")],
+                )
+            )
+            st.plotly_chart(fig_workload_comp, use_container_width=True)
+
+        fig_dashboard = build_dashboard_summary_chart(results, compare_df)
+        st.plotly_chart(fig_dashboard, use_container_width=True)
 
 # ============================================================================
 # STAFF LOAD + TIMELINE CHARTS
@@ -1822,62 +1754,66 @@ if scenario_rows:
 
 st.header("Staff and Timeline")
 
-staff_load = results.get("staff_load", {})
-if staff_load:
-    staff_ids = list(staff_load.keys())
-    staff_labels = [format_staff_label(staff_id, staff_college_map) for staff_id in staff_ids]
-    staff_values = [staff_load[staff_id] for staff_id in staff_ids]
-    fig_staff = go.Figure(
-        data=[
-            go.Bar(
-                x=staff_labels,
-                y=staff_values,
-                marker=dict(
-                    color=staff_values,
-                    colorscale=[
-                        [0.0, "#5b21b6"],
-                        [0.55, "#9333ea"],
-                        [1.0, "#22d3ee"],
-                    ],
-                ),
-                text=staff_values,
-                textposition="outside",
-            )
-        ]
-    )
-    fig_staff.update_layout(
-        title=f"Requests Processed per Staff — {variant_label}",
-        xaxis_title="Staff",
-        yaxis_title="Processed Requests",
-        height=450,
-    )
-    apply_plot_theme(fig_staff)
-    st.plotly_chart(fig_staff, use_container_width=True)
+chart_col1, chart_col2 = st.columns(2)
 
-if engine.completed:
-    timeline_rows = []
-    for req in engine.completed:
-        assigned_day = (req.assignment_time.date() - engine.start_time.date()).days + 1
-        timeline_rows.append(
-            {
-                "Assigned Day": assigned_day,
-                "College": req.college,
-                "Count": 1,
-            }
+with chart_col1:
+    staff_load = results.get("staff_load", {})
+    if staff_load:
+        staff_ids = list(staff_load.keys())
+        staff_labels = [format_staff_label(staff_id, staff_college_map) for staff_id in staff_ids]
+        staff_values = [staff_load[staff_id] for staff_id in staff_ids]
+        fig_staff = go.Figure(
+            data=[
+                go.Bar(
+                    x=staff_labels,
+                    y=staff_values,
+                    marker=dict(
+                        color=staff_values,
+                        colorscale=[
+                            [0.0, "#5b21b6"],
+                            [0.55, "#9333ea"],
+                            [1.0, "#22d3ee"],
+                        ],
+                    ),
+                    text=staff_values,
+                    textposition="outside",
+                )
+            ]
         )
-    timeline_df = pd.DataFrame(timeline_rows)
-    grouped = timeline_df.groupby(["Assigned Day", "College"]).size().reset_index(name="Count")
-    fig_timeline = px.bar(
-        grouped,
-        x="Assigned Day",
-        y="Count",
-        color="College",
-        color_discrete_sequence=CHART_COLORWAY,
-        title=f"Assignments per Day by College — {variant_label}",
-        height=450,
-    )
-    apply_plot_theme(fig_timeline)
-    st.plotly_chart(fig_timeline, use_container_width=True)
+        fig_staff.update_layout(
+            title="Requests Processed per Staff",
+            xaxis_title="Staff",
+            yaxis_title="Processed Requests",
+            height=400,
+        )
+        apply_plot_theme(fig_staff)
+        st.plotly_chart(fig_staff, use_container_width=True)
+
+with chart_col2:
+    if engine.completed:
+        timeline_rows = []
+        for req in engine.completed:
+            assigned_day = (req.assignment_time.date() - engine.start_time.date()).days + 1
+            timeline_rows.append(
+                {
+                    "Assigned Day": assigned_day,
+                    "College": req.college,
+                    "Count": 1,
+                }
+            )
+        timeline_df = pd.DataFrame(timeline_rows)
+        grouped = timeline_df.groupby(["Assigned Day", "College"]).size().reset_index(name="Count")
+        fig_timeline = px.bar(
+            grouped,
+            x="Assigned Day",
+            y="Count",
+            color="College",
+            color_discrete_sequence=CHART_COLORWAY,
+            title="Assignments per Day by College",
+            height=400,
+        )
+        apply_plot_theme(fig_timeline)
+        st.plotly_chart(fig_timeline, use_container_width=True)
 
 if engine.completed:
     selected_college = st.selectbox(
@@ -1923,7 +1859,7 @@ if engine.completed:
                 ]
             )
             fig_docs.update_layout(
-                title=f"Requested Document Mix (Completed) — {variant_label}",
+                title="Requested Document Mix (Completed)",
                 height=420,
                 showlegend=False,
             )
@@ -2009,7 +1945,7 @@ if requests_to_analyze:
         x="Document Type",
         y="Count",
         text="Count",
-        title=f"Document Type Distribution: {title_suffix} — {variant_label}",
+        title=f"Document Type Distribution: {title_suffix}",
         color="Count",
         color_continuous_scale=["#a855f7", "#7c3aed", "#22d3ee"],
         height=500,
@@ -2301,19 +2237,9 @@ st.header("Comparison Tools")
 
 c1, c2 = st.columns(2)
 with c1:
-    compare_schedulers = st.multiselect(
-        "Schedulers",
-        SCHEDULER_OPTIONS,
-        default=SCHEDULER_OPTIONS,
-        format_func=lambda value: SCHEDULER_LABELS.get(value, value),
-    )
+    compare_schedulers = st.multiselect("Schedulers", SCHEDULER_OPTIONS, default=SCHEDULER_OPTIONS)
 with c2:
-    compare_allocators = st.multiselect(
-        "Allocators",
-        ALLOCATOR_OPTIONS,
-        default=ALLOCATOR_OPTIONS,
-        format_func=lambda value: ALLOCATOR_LABELS.get(value, value.replace("_", " ").title()),
-    )
+    compare_allocators = st.multiselect("Allocators", ALLOCATOR_OPTIONS, default=ALLOCATOR_OPTIONS)
 
 if st.button("Run Comparison Across Selected Variants", use_container_width=True):
     if not compare_schedulers or not compare_allocators:
@@ -2353,14 +2279,11 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
                         "scheduler": scheduler,
                         "allocator": allocator,
                         "completed_requests": compare_result.get("completed_requests", []),
+                        "staff_load": compare_result.get("staff_load", {}),
                     }
                 )
 
-                staff_load_values = list(compare_result.get("staff_load", {}).values())
-                staff_load_std = float(pd.Series(staff_load_values).std(ddof=0)) if staff_load_values else 0.0
-                staff_load_mean = float(pd.Series(staff_load_values).mean()) if staff_load_values else 0.0
-                staff_load_cv = round(staff_load_std / max(staff_load_mean, 1.0), 4) if staff_load_mean else 0.0
-
+                workload_stats = compute_workload_stats(compare_result.get("staff_load", {}))
                 compare_rows.append(
                     {
                         "scheduler": scheduler,
@@ -2370,8 +2293,8 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
                         "avg_turnaround_days": compare_result.get("avg_turnaround_days", 0.0),
                         "total_days_elapsed": compare_result.get("total_days_elapsed", 0.0),
                         "throughput_req_per_day": compare_result.get("throughput_req_per_day", 0.0),
-                        "staff_load_std": round(staff_load_std, 2),
-                        "staff_load_cv": round(staff_load_cv, 4),
+                        "workload_std": workload_stats["std"],
+                        "workload_variance": workload_stats["variance"],
                     }
                 )
 
@@ -2401,95 +2324,7 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
         st.session_state.comparison_details = compare_details
 
 if st.session_state.comparison_df is not None:
-    # Prepare display dataframe from the stored comparison results
-    compare_df = st.session_state.comparison_df.copy()
-
-    # Formal allocator and scheduler labels
-    ALLOCATOR_LABELS = {
-        "college_based": "College Based",
-        "workload_based": "Workload Based",
-        "pooled": "Pooled",
-        "quota_free": "Quota Free",
-    }
-
-    # Use existing SCHEDULER_LABELS for scheduler display where available
-    scheduler_display = compare_df["scheduler"].map(lambda s: SCHEDULER_LABELS.get(s, str(s)))
-    allocator_display = compare_df["allocator"].map(lambda a: ALLOCATOR_LABELS.get(a, str(a).replace("_", " ").title()))
-    compare_df["Variant"] = scheduler_display + " | " + allocator_display
-
-    st.subheader("Variant Comparison Table")
-    st.caption("Use the filters below to select which variants and columns appear in the comparison table.")
-
-    # Variant filter (multi-select)
-    variant_options = list(compare_df["Variant"].unique())
-    selected_variants = st.multiselect("Show variants", variant_options, default=variant_options)
-    if selected_variants:
-        compare_df = compare_df[compare_df["Variant"].isin(selected_variants)].copy()
-
-    # Column selector for the comparison table
-    available_cols = [c for c in compare_df.columns if c not in ("Variant",)]
-    # Put Variant first in defaults
-    default_cols = ["Variant"] + available_cols
-    selected_cols = st.multiselect(
-        "Columns to display",
-        options=default_cols,
-        default=default_cols,
-        format_func=humanize_option_label,
-    )
-
-    if not selected_cols:
-        st.info("Select at least one column to display the comparison table.")
-    else:
-        # Human-friendly column labels
-        def human_label(col: str) -> str:
-            labels = {
-                "scheduler": "Scheduler",
-                "allocator": "Allocator",
-                "Variant": "Variant",
-                "total_processed": "Total Processed",
-                "avg_waiting_time_hours": "Avg Waiting Time (h)",
-                "avg_turnaround_days": "Avg Turnaround (d)",
-                "total_days_elapsed": "Total Days Elapsed",
-                "throughput_req_per_day": "Throughput (req/day)",
-                "staff_load_std": "Staff Load Std Dev",
-                "staff_load_cv": "Staff Load CV",
-                "delta_wait_vs_baseline": "Δ Wait vs Baseline (h)",
-                "delta_throughput_vs_baseline": "Δ Throughput vs Baseline",
-                "delta_turnaround_vs_baseline": "Δ Turnaround vs Baseline (d)",
-                "order_changed_pct": "Order Changed (%)",
-            }
-            if col in labels:
-                return labels[col]
-            # fallback: turn snake_case into Title Case
-            return str(col).replace("_", " ").title()
-
-        # Build display DataFrame and rename columns for presentation
-        display_df = compare_df[selected_cols].copy()
-        rename_map = {c: human_label(c) for c in display_df.columns}
-        display_df.rename(columns=rename_map, inplace=True)
-
-        render_theme_table(display_df, height_px=420)
-
-        # Also show charts for the filtered variants
-        compare_fig = build_variant_wait_balance_chart(compare_df)
-        if compare_fig.data:
-            st.subheader("Average Waiting Time by Variant")
-            st.plotly_chart(compare_fig, use_container_width=True)
-
-        dist_fig = build_workload_distribution_chart(compare_df)
-        if dist_fig.data:
-            st.subheader("Workload Distribution by Variant")
-            st.plotly_chart(dist_fig, use_container_width=True)
-
-        imbalance_fig = build_workload_imbalance_chart(compare_df)
-        if imbalance_fig.data:
-            st.subheader("Workload Imbalance by Variant")
-            st.plotly_chart(imbalance_fig, use_container_width=True)
-
-        summary_fig = build_variant_summary_chart(compare_df)
-        if summary_fig.data:
-            st.subheader("Variant Performance Summary")
-            st.plotly_chart(summary_fig, use_container_width=True)
+    render_theme_table(st.session_state.comparison_df, height_px=360)
 
 comparison_details = st.session_state.get("comparison_details")
 if st.session_state.comparison_df is not None and comparison_details:
@@ -2614,46 +2449,22 @@ if st.session_state.comparison_df is not None and comparison_details:
         if diff_df.empty:
             st.info("No comparable request-level differences found.")
         else:
-            raw_variant_options = [
-                (row["scheduler"], row["allocator"]) for row in diff_rows
-            ]
-
-            diff_df = diff_df.rename(
-                columns={
-                    "scheduler": "Scheduler",
-                    "allocator": "Allocator",
-                    "order_changed_count": "Order Changed Count",
-                    "order_changed_pct": "Order Changed %",
-                    "avg_abs_rank_shift": "Avg Abs Rank Shift",
-                    "staff_changed_count": "Staff Changed Count",
-                    "staff_changed_pct": "Staff Changed %",
-                    "avg_assign_time_delta_min": "Avg Assign Delta (min)",
-                    "avg_complete_time_delta_min": "Avg Complete Delta (min)",
-                }
-            )
-            diff_df["Scheduler"] = diff_df["Scheduler"].map(
-                lambda s: SCHEDULER_LABELS.get(s, str(s))
-            )
-            diff_df["Allocator"] = diff_df["Allocator"].map(
-                lambda a: ALLOCATOR_LABELS.get(a, str(a).replace("_", " ").title())
-            )
-
             render_theme_table(diff_df, height_px=320)
 
             fig_diff = go.Figure()
             fig_diff.add_trace(
                 go.Bar(
                     name="Order Changed %",
-                    x=diff_df["Allocator"],
-                    y=diff_df["Order Changed %"],
+                    x=diff_df["allocator"],
+                    y=diff_df["order_changed_pct"],
                     marker_color="#a855f7",
                 )
             )
             fig_diff.add_trace(
                 go.Bar(
                     name="Staff Changed %",
-                    x=diff_df["Allocator"],
-                    y=diff_df["Staff Changed %"],
+                    x=diff_df["allocator"],
+                    y=diff_df["staff_changed_pct"],
                     marker_color="#22d3ee",
                 )
             )
@@ -2667,15 +2478,19 @@ if st.session_state.comparison_df is not None and comparison_details:
             apply_plot_theme(fig_diff)
             st.plotly_chart(fig_diff, use_container_width=True)
 
+            variant_labels = [
+                f"{row['scheduler']} | {row['allocator']}" for _, row in diff_df.iterrows()
+            ]
             selected_variant = st.selectbox(
                 "Inspect Variant",
-                options=raw_variant_options,
-                format_func=lambda v: f"{SCHEDULER_LABELS.get(v[0], v[0])} | {ALLOCATOR_LABELS.get(v[1], v[1].replace('_', ' ').title())}",
+                variant_labels,
                 index=0,
             )
 
             if selected_variant:
-                selected_sched, selected_alloc = selected_variant
+                selected_sched, selected_alloc = [
+                    part.strip() for part in selected_variant.split("|", 1)
+                ]
                 selected_detail = next(
                     (
                         item
