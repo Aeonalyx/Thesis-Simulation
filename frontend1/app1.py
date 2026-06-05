@@ -791,7 +791,9 @@ def build_baseline_queue_dynamics_chart(event_log: List[Dict], variant_label: st
     return fig
 
 
-def build_weighted_priority_distribution_chart(requests: List[Dict], variant_label: str = "") -> go.Figure:
+def build_weighted_priority_distribution_chart(
+    requests: List[Dict], selected_doc_types: List[str], variant_label: str = ""
+) -> go.Figure:
     rows = []
     for req in requests:
         if not req:
@@ -800,14 +802,20 @@ def build_weighted_priority_distribution_chart(requests: List[Dict], variant_lab
         if isinstance(req, dict):
             score = float(req.get("priority_score", 0.0) or 0.0)
             assigned = bool(req.get("assignment_time"))
+            doc_type = req.get("document_type", "Unknown")
         else:
             score = float(getattr(req, "priority_score", 0.0) or 0.0)
             assigned = getattr(req, "assignment_time", None) is not None
+            doc_type = getattr(req, "document_type", "Unknown")
+
+        if selected_doc_types and doc_type not in selected_doc_types:
+            continue
 
         rows.append(
             {
                 "Priority Score": score,
                 "Status": "Assigned" if assigned else "Unassigned",
+                "Document Type": doc_type,
             }
         )
 
@@ -815,24 +823,28 @@ def build_weighted_priority_distribution_chart(requests: List[Dict], variant_lab
         return go.Figure()
 
     df = pd.DataFrame(rows)
-    chart_title = "Priority Score Distribution by Assignment Status"
+    chart_title = "Priority Score Distribution by Request Type"
     if variant_label:
         chart_title = f"{chart_title} — {variant_label}"
 
     fig = px.histogram(
         df,
         x="Priority Score",
-        color="Status",
+        color="Document Type",
         barmode="overlay",
         nbins=20,
         histnorm="percent",
         title=chart_title,
-        color_discrete_map={"Assigned": "#a855f7", "Unassigned": "#22d3ee"},
-        labels={"Priority Score": "Priority Score", "Status": "Assignment Status"},
+        labels={
+            "Priority Score": "Priority Score",
+            "Document Type": "Request Type",
+        },
         height=420,
     )
     fig.update_traces(opacity=0.75)
-    fig.update_layout(legend=dict(title="Request Status", orientation="h", y=1.02, x=0.5, xanchor="center"))
+    fig.update_layout(
+        legend=dict(title="Request Type", orientation="h", y=1.02, x=0.5, xanchor="center")
+    )
     apply_plot_theme(fig)
     return fig
 
@@ -1794,11 +1806,34 @@ else:
     st.info("Queue dynamics are not available for the selected simulation.")
 
 if results.get("scheduler_type") == "WEIGHTED":
-    fig_43 = build_weighted_priority_distribution_chart(results.get("generated_requests", []), variant_label)
-    if fig_43.data:
-        st.plotly_chart(fig_43, use_container_width=True)
+    generated_requests = results.get("generated_requests", [])
+    request_types = sorted(
+        {
+            (req.get("document_type") if isinstance(req, dict) else getattr(req, "document_type", None))
+            for req in generated_requests
+            if req is not None
+        }
+    )
+    request_types = [rt for rt in request_types if rt]
+    selected_request_types = st.multiselect(
+        "Request types to include in the priority distribution",
+        options=request_types,
+        default=request_types,
+        key="priority_distribution_doc_types",
+    )
+
+    if not selected_request_types:
+        st.info("Select one or more request types to display the priority score distribution.")
     else:
-        st.info("Priority score distribution is not available for the selected simulation.")
+        fig_43 = build_weighted_priority_distribution_chart(
+            generated_requests,
+            selected_request_types,
+            variant_label,
+        )
+        if fig_43.data:
+            st.plotly_chart(fig_43, use_container_width=True)
+        else:
+            st.info("Priority score distribution is not available for the selected simulation.")
 else:
     st.info("Priority score distribution is only shown for the WEIGHTED scheduler.")
 
@@ -2426,8 +2461,12 @@ if st.session_state.comparison_df is not None:
     if selected_variants:
         compare_df = compare_df[compare_df["Variant"].isin(selected_variants)].copy()
 
-    # Column selector for the comparison table
-    available_cols = [c for c in compare_df.columns if c not in ("Variant",)]
+    # Column selector for the comparison table — exclude scheduler/allocator because Variant summarizes them
+    available_cols = [
+        c
+        for c in compare_df.columns
+        if c not in ("Variant", "scheduler", "allocator")
+    ]
     # Put Variant first in defaults
     default_cols = ["Variant"] + available_cols
     selected_cols = st.multiselect(
