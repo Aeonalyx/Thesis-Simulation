@@ -84,4 +84,4 @@ from backend1.roc_utils import PRIORITY_ROC_WEIGHTS
 
 
 ### More to add
-- Custom request rather than generated? and the request must be inserted based on setup (time progression, when it was submitted, etc) and is highlighted to show where it would end up in the playback
+- Custom request rather than generated? and the request must be inserted based on setup (time progression, when it was submitted, etc) and is highlighted to show where it would end up in the playback. MIGHT NEED TO PUT BACK WORKLOAD VARIANCE TO SHOW ALLOCATOR'S WORKLOAD IMBALANCE RATIO

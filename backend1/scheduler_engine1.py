@@ -17,10 +17,18 @@ import re
 import random
 try:
     # Works when run from workspace root as a package
-    from backend1.roc_utils import PRIORITY_ROC_WEIGHTS
+    from backend1.roc_utils import (
+        PRIORITY_ROC_WEIGHTS,
+        PRIORITY_ROC_WEIGHTS_BASE,
+        PRIORITY_ROC_WEIGHTS_FULL,
+    )
 except ImportError:
     # Works when run directly from backend1/ as a script
-    from roc_utils import PRIORITY_ROC_WEIGHTS
+    from roc_utils import (
+        PRIORITY_ROC_WEIGHTS,
+        PRIORITY_ROC_WEIGHTS_BASE,
+        PRIORITY_ROC_WEIGHTS_FULL,
+    )
 
 # ============================================================================
 # DEFAULT CONFIGURATION
@@ -388,7 +396,19 @@ class SimulationEngine:
         self.scheduler_type = (scheduler_type or "FCFS").upper().strip()
         self.allocator_type = (allocator_type or "college_based").strip().lower()
 
-        self.priority_weights = self._normalize_weights(priority_weights or PRIORITY_WEIGHTS)
+        # Record whether urgency is enabled early so normalization can act on it.
+        self.urgency = urgency
+
+        # Select default ROC weight set: by default use the base (6 criteria).
+        # If the caller explicitly provided `priority_weights`, respect that.
+        if priority_weights is None:
+            default_weights = PRIORITY_ROC_WEIGHTS_FULL if self.urgency else PRIORITY_ROC_WEIGHTS_BASE
+        else:
+            default_weights = priority_weights
+
+        # Normalize the chosen weight set (this will also drop 'urgency' if
+        # urgency is disabled and an 'urgency' key exists in the provided dict).
+        self.priority_weights = self._normalize_weights(default_weights)
 
         self.work_start_minutes = self._parse_clock_minutes(work_start, 8 * 60)
         self.work_end_minutes = self._parse_clock_minutes(work_end, 17 * 60)
@@ -419,7 +439,7 @@ class SimulationEngine:
         self.event_log: List[Dict] = []
         self._event_seq = 0
         self.absent_staff_ids: List[str] = []
-        self.urgency = urgency
+        
 
     # ---------------------------------------------------------------------
     # Time helpers
@@ -491,14 +511,39 @@ class SimulationEngine:
     # ---------------------------------------------------------------------
 
     def _normalize_weights(self, weights: Dict[str, float]) -> Dict[str, float]:
-        keys = list(PRIORITY_WEIGHTS.keys())
+        # Work on a copy so caller dict isn't mutated
+        src = dict(weights or {})
+
+        # If urgency is not enabled for this engine, ignore any supplied
+        # 'urgency' key so normalization only covers the active criteria.
+        if not getattr(self, "urgency", False) and "urgency" in src:
+            src.pop("urgency")
+
+        # Preserve canonical ordering from PRIORITY_WEIGHTS when possible.
+        canonical_keys = [k for k in PRIORITY_WEIGHTS.keys() if k in src]
+        # Append any non-canonical keys the user provided.
+        other_keys = [k for k in src.keys() if k not in canonical_keys]
+        keys = canonical_keys + other_keys
+
         clean: Dict[str, float] = {}
         for key in keys:
-            raw = float(weights.get(key, 0.0))
+            try:
+                raw = float(src.get(key, 0.0))
+            except Exception:
+                raw = 0.0
             clean[key] = max(raw, 0.0)
+
         total = sum(clean.values())
         if total <= 0:
-            return PRIORITY_WEIGHTS.copy()
+            # Fallback: use PRIORITY_WEIGHTS but also remove urgency if disabled.
+            fallback = dict(PRIORITY_WEIGHTS)
+            if not getattr(self, "urgency", False) and "urgency" in fallback:
+                fallback.pop("urgency")
+            ftotal = sum(float(v) for v in fallback.values())
+            if ftotal <= 0:
+                return fallback
+            return {k: float(v) / ftotal for k, v in fallback.items()}
+
         return {k: v / total for k, v in clean.items()}
 
     def _is_request_ready(self, request: DocumentRequest, current_time: datetime) -> bool:
