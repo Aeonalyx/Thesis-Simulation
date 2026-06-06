@@ -1620,7 +1620,7 @@ else:
         for row in pending_queue_rows:
             row.pop("_sort_submission", None)
 
-        card1, card2, card3, card4, card5 = st.columns([1.5, 1, 1, 1, 1])
+        card1, card2, card3, card4, card5 = st.columns([1.6, 1, 1, 1, 1])
         card1.metric("Simulation Clock", current_time.strftime("%Y-%m-%d %H:%M"))
         card2.metric("Current Request Step", f"{st.session_state.playback_frame + 1}/{max_step + 1}")
         card3.metric("Processed Decisions", frame_data["processed_count"])
