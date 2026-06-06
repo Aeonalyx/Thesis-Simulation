@@ -30,9 +30,7 @@ from backend1.scheduler_engine1 import (  # noqa: E402
     COLLEGES,
     DOCUMENT_COMPLEXITY,
     PRIORITY_WEIGHTS,
-    PRIORITY_ROC_WEIGHTS_FULL,
     COLLEGE_PRIORITY,
-    _soft_cap,
     COMPLETENESS_LEVELS,
     REQUESTER_PRIORITY,
     REQUESTER_PRIORITY_MAX,
@@ -50,7 +48,6 @@ CRITERIA_LABELS = {
     "requester_status": "Requester status",
     "college_affiliation": "College affiliation",
     "payment_status": "Payment status",
-    "urgency": "Urgency",
 }
 
 
@@ -60,14 +57,6 @@ def format_criterion_label(key: str) -> str:
 
 def weight_state_key(key: str) -> str:
     return f"w_{key}"
-
-
-def active_criteria() -> List[str]:
-    """Return the list of criteria to render in the UI based on urgency toggle."""
-    keys = list(CRITERIA_KEYS)
-    if st.session_state.get("urgency", False) and "urgency" not in keys:
-        keys = keys + ["urgency"]
-    return keys
 
 
 # ============================================================================
@@ -342,216 +331,6 @@ def apply_dashboard_theme():
             background: rgba(255, 255, 255, 0.14);
             white-space: nowrap;
         }
-
-        .comparison-board {
-            display: grid;
-            gap: 0.9rem;
-            margin-top: 0.6rem;
-        }
-
-        .comparison-grid {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 0.9rem;
-        }
-
-        .comparison-card {
-            position: relative;
-            border-radius: 18px;
-            border: 1px solid rgba(148, 163, 184, 0.22);
-            background:
-                radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 38%),
-                linear-gradient(160deg, rgba(26, 20, 47, 0.96) 0%, rgba(18, 15, 35, 0.96) 100%);
-            box-shadow: 0 16px 34px rgba(5, 4, 12, 0.42);
-            padding: 0.95rem 1rem 1rem;
-            overflow: hidden;
-        }
-
-        .comparison-card::before {
-            content: "";
-            position: absolute;
-            inset: 0 0 auto 0;
-            height: 4px;
-            background: linear-gradient(90deg, #22d3ee 0%, #60a5fa 45%, #a855f7 100%);
-        }
-
-        .comparison-card h4 {
-            margin: 0;
-            font-size: 1rem;
-            font-weight: 800;
-            color: #f8f6ff;
-        }
-
-        .comparison-card .meta {
-            margin-top: 0.22rem;
-            color: #bcb3da;
-            font-size: 0.8rem;
-        }
-
-        .comparison-pill-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.38rem;
-            margin-top: 0.7rem;
-        }
-
-        .comparison-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-            border-radius: 999px;
-            padding: 0.34rem 0.62rem;
-            font-size: 0.72rem;
-            font-weight: 700;
-            border: 1px solid rgba(148, 163, 184, 0.22);
-            background: rgba(255, 255, 255, 0.04);
-            color: #efeafe;
-        }
-
-        .comparison-pill.good {
-            background: rgba(16, 185, 129, 0.15);
-            border-color: rgba(16, 185, 129, 0.32);
-            color: #a7f3d0;
-        }
-
-        .comparison-pill.warn {
-            background: rgba(245, 158, 11, 0.15);
-            border-color: rgba(245, 158, 11, 0.32);
-            color: #fde68a;
-        }
-
-        .comparison-pill.neutral {
-            background: rgba(96, 165, 250, 0.12);
-            border-color: rgba(96, 165, 250, 0.28);
-            color: #bfdbfe;
-        }
-
-        .comparison-big {
-            display: flex;
-            align-items: baseline;
-            gap: 0.3rem;
-            margin-top: 0.7rem;
-        }
-
-        .comparison-big .value {
-            font-size: 2rem;
-            line-height: 1;
-            font-weight: 900;
-            letter-spacing: -0.03em;
-        }
-
-        .comparison-big .label {
-            color: #cfc8e8;
-            font-size: 0.82rem;
-            font-weight: 600;
-        }
-
-        .comparison-bar {
-            margin-top: 0.7rem;
-            width: 100%;
-            height: 10px;
-            border-radius: 999px;
-            background: rgba(148, 163, 184, 0.14);
-            overflow: hidden;
-        }
-
-        .comparison-bar > span {
-            display: block;
-            height: 100%;
-            border-radius: inherit;
-            background: linear-gradient(90deg, #22d3ee 0%, #60a5fa 55%, #a855f7 100%);
-        }
-
-        .comparison-columns {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.9rem;
-            margin-top: 0.2rem;
-        }
-
-        .comparison-panel {
-            border-radius: 18px;
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            background: rgba(255, 255, 255, 0.03);
-            padding: 0.95rem 1rem 1rem;
-        }
-
-        .comparison-panel h5 {
-            margin: 0 0 0.6rem;
-            font-size: 0.95rem;
-            font-weight: 800;
-        }
-
-        .comparison-list {
-            display: grid;
-            gap: 0.58rem;
-        }
-
-        .comparison-item {
-            display: grid;
-            grid-template-columns: auto 1fr auto;
-            gap: 0.6rem;
-            align-items: center;
-            padding: 0.52rem 0.62rem;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(148, 163, 184, 0.16);
-        }
-
-        .comparison-icon {
-            width: 2rem;
-            height: 2rem;
-            border-radius: 999px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1rem;
-            font-weight: 900;
-            color: #fff;
-        }
-
-        .comparison-icon.good {
-            background: linear-gradient(135deg, #10b981 0%, #22c55e 100%);
-        }
-
-        .comparison-icon.bad {
-            background: linear-gradient(135deg, #f97316 0%, #ef4444 100%);
-        }
-
-        .comparison-icon.neutral {
-            background: linear-gradient(135deg, #60a5fa 0%, #7c3aed 100%);
-        }
-
-        .comparison-item-title {
-            font-weight: 700;
-            color: #f3edff;
-            font-size: 0.88rem;
-        }
-
-        .comparison-item-sub {
-            color: #bcb3da;
-            font-size: 0.74rem;
-            margin-top: 0.1rem;
-        }
-
-        .comparison-item-value {
-            font-size: 0.96rem;
-            font-weight: 900;
-            white-space: nowrap;
-        }
-
-        .comparison-callout {
-            margin-top: 0.2rem;
-            padding: 0.9rem 1rem;
-            border-radius: 16px;
-            border: 1px solid rgba(96, 165, 250, 0.22);
-            background: linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(17, 24, 39, 0.75) 100%);
-            color: #e5e7eb;
-        }
-
-        .comparison-callout strong {
-            color: #f8fafc;
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -698,7 +477,7 @@ def collect_ui_config() -> Dict:
         "seed_mode": st.session_state.seed_mode,
         "manual_seed": int(st.session_state.manual_seed),
         "weights_raw": {
-            key: int(st.session_state.get(weight_state_key(key), 0)) for key in active_criteria()
+            key: int(st.session_state[weight_state_key(key)]) for key in CRITERIA_KEYS
         },
     }
 
@@ -743,21 +522,15 @@ def apply_ui_config(config: Dict):
     st.session_state.manual_seed = int(config.get("manual_seed", st.session_state.manual_seed))
 
     raw = config.get("weights_raw", {})
-    # Apply raw weights for canonical criteria
     for key in CRITERIA_KEYS:
         state_key = weight_state_key(key)
-        st.session_state[state_key] = int(raw.get(key, st.session_state.get(state_key, 50)))
-    # If incoming config included urgency, apply it too
-    if "urgency" in raw:
-        st.session_state[weight_state_key("urgency")] = int(raw.get("urgency", st.session_state.get(weight_state_key("urgency"), 50)))
+        st.session_state[state_key] = int(raw.get(key, st.session_state[state_key]))
 
 
 def normalized_weights_from_ui() -> Dict[str, float]:
-    keys = active_criteria()
-    raw = {key: float(st.session_state.get(weight_state_key(key), 0.0)) for key in keys}
+    raw = {key: float(st.session_state[weight_state_key(key)]) for key in CRITERIA_KEYS}
     total = sum(raw.values())
     if total <= 0:
-        # Fallback to default PRIORITY_WEIGHTS (module import from backend)
         return PRIORITY_WEIGHTS.copy()
     return {key: value / total for key, value in raw.items()}
 
@@ -784,10 +557,7 @@ def build_engine_and_run_config() -> Dict:
             "num_staff": int(st.session_state.num_staff),
             "quota_limit": int(st.session_state.quota_limit),
         },
-        # If urgency is enabled but all other sliders are zero (user didn't set others),
-        # avoid passing a single-key weights dict that would force urgency=1 and others=0.
-        # Let the engine pick the appropriate ROC defaults instead by passing None.
-        "priority_weights": None if (st.session_state.urgency and sum(weights.get(k, 0.0) for k in weights if k != "urgency") <= 1e-9) else weights,
+        "priority_weights": weights,
         "random_seed": manual_seed,
         "work_start": st.session_state.work_start_time.strftime("%H:%M"),
         "work_end": st.session_state.work_end_time.strftime("%H:%M"),
@@ -1575,19 +1345,7 @@ else:
 
 if st.session_state.scheduler_type == "WEIGHTED":
     st.sidebar.subheader("Weighted Priority")
-    # Ensure session_state has entries for any active criteria (including urgency)
-    for key in active_criteria():
-        state_key = weight_state_key(key)
-        if state_key not in st.session_state:
-            # Use PRIORITY_ROC_WEIGHTS_FULL for urgency to get the correct ROC default
-            if key == "urgency":
-                default_raw = PRIORITY_ROC_WEIGHTS_FULL.get(key, 0.02)
-            else:
-                default_raw = PRIORITY_WEIGHTS.get(key, 0.0)
-            default_val = int(default_raw * 100) if isinstance(default_raw, (int, float)) else 50
-            st.session_state[state_key] = default_val
-
-    for key in active_criteria():
+    for key in CRITERIA_KEYS:
         st.sidebar.slider(
             f"Weight: {format_criterion_label(key)}",
             min_value=0,
@@ -2420,7 +2178,6 @@ else:
             f"**Completeness:** {float(getattr(selected_req, 'completeness_of_requirements', 0.0)):.2f}"
         )
         st.write(f"**Requester Status:** {getattr(selected_req, 'requester_type', '-')}")
-        st.write(f"**Urgency (generated):** {getattr(selected_req, 'urgency', '-')}")
         st.write(f"**Payment Status:** {getattr(selected_req, 'payment_status', '-')}")
         st.write(f"**Priority Score:** {float(getattr(selected_req, 'priority_score', 0.0)):.4f}")
         st.write(f"**Assigned Staff:** {format_staff_label(selected_req.assigned_staff, staff_college_map)}")
@@ -2461,13 +2218,10 @@ else:
                 request_obj.priority_score,
             )
             try:
-                # Ensure we pass the engine's urgency flag so the same
-                # weighting behavior is applied when computing scores.
                 return request_obj.calculate_priority(
                     at_time,
                     engine.priority_weights,
                     engine.workday_minutes,
-                    urgency=engine.urgency,
                 )
             finally:
                 (
@@ -2500,70 +2254,6 @@ else:
         if stage_rows:
             stage_df = pd.DataFrame(stage_rows)
             render_theme_table(stage_df, height_px=220)
-            # Debug breakdown: show engine weights and per-criterion contributions
-            with st.expander("Debug: weight & contribution breakdown", expanded=False):
-                st.write("Engine priority_weights:")
-                st.write(engine.priority_weights)
-
-                contrib_rows = []
-                # Recompute per-stage contributions using same logic as calculate_priority
-                for label, ts in stage_points:
-                    if ts is None:
-                        continue
-                    # compute feature scores
-                    selected_req.update_status(ts)
-                    completeness_norm = max(0.0, min(float(selected_req.completeness_of_requirements), 1.0))
-                    requester_raw = REQUESTER_PRIORITY.get(selected_req.requester_type, 3)
-                    requester_norm = requester_raw / max(float(REQUESTER_PRIORITY_MAX), 1.0)
-                    waiting_minutes = max(0.0, (ts - selected_req.submission_time).total_seconds() / 60.0)
-                    submission_norm = _soft_cap(waiting_minutes, max(float(engine.workday_minutes * 2), 1.0))
-                    base_duration, _ = _duration_to_schedule(DOCUMENT_COMPLEXITY.get(selected_req.document_type, 1))
-                    complexity_days = max(base_duration.total_seconds() / 86400.0, 1e-6)
-                    doc_norm = 1.0 / (1.0 + complexity_days)
-                    college_norm = float(COLLEGE_PRIORITY.get(selected_req.college, 0.5))
-                    payment_norm = 0.0
-                    if isinstance(selected_req.payment_status, str):
-                        status_text = selected_req.payment_status.strip().lower()
-                        if status_text in {"paid", "settled", "complete", "cleared", "yes", "y", "true", "1"}:
-                            payment_norm = 1.0
-                    else:
-                        payment_norm = 1.0 if bool(selected_req.payment_status) else 0.0
-                    urgency_norm = float(selected_req.urgency) / 10.0 if engine.urgency else 0.0
-
-                    scores_map = {
-                        "completeness_of_requirements": completeness_norm,
-                        "submission_time": submission_norm,
-                        "document_type": doc_norm,
-                        "requester_status": requester_norm,
-                        "college_affiliation": college_norm,
-                        "payment_status": payment_norm,
-                        "urgency": urgency_norm,
-                    }
-
-                    total_raw = 0.0
-                    for k, w in engine.priority_weights.items():
-                        if k == "urgency" and not engine.urgency:
-                            continue
-                        val = scores_map.get(k, 0.0)
-                        contrib = float(w) * float(val)
-                        total_raw += contrib
-                        contrib_rows.append(
-                            {
-                                "Stage": label,
-                                "Criterion": k,
-                                "Weight": round(float(w), 6),
-                                "Feature": round(float(val), 6),
-                                "Contribution": round(float(contrib), 6),
-                            }
-                        )
-
-                    contrib_rows.append(
-                        {"Stage": label, "Criterion": "TOTAL", "Weight": "-", "Feature": "-", "Contribution": round(total_raw, 6)}
-                    )
-
-                if contrib_rows:
-                    contrib_df = pd.DataFrame(contrib_rows)
-                    render_theme_table(contrib_df)
         else:
             st.write("No stage timestamps available.")
 
@@ -2743,6 +2433,7 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
         ).round(2)
 
         st.session_state.comparison_df = compare_df
+        st.session_state.comparison_details = compare_details
 
 if st.session_state.comparison_df is not None:
     # Prepare display dataframe from the stored comparison results
@@ -2876,82 +2567,196 @@ if st.session_state.comparison_df is not None and comparison_details:
 
     compare_df = st.session_state.comparison_df
     baseline_row = compare_df.iloc[0]
-    compare_df = st.session_state.comparison_df.copy()
     baseline_match = compare_df[
         (compare_df["scheduler"] == "FCFS")
         & (compare_df["allocator"] == "college_based")
     ]
-    baseline_row = baseline_match.iloc[0] if not baseline_match.empty else compare_df.iloc[0]
+    if not baseline_match.empty:
+        baseline_row = baseline_match.iloc[0]
 
-    compare_df["throughput_delta_pct"] = (
-        ((compare_df["throughput_req_per_day"] / max(float(baseline_row["throughput_req_per_day"]), 1e-6)) - 1.0)
-        * 100.0
-    ).round(2)
-    compare_df["wait_delta_pct"] = (
-        (1.0 - (compare_df["avg_waiting_time_hours"] / max(float(baseline_row["avg_waiting_time_hours"]), 1e-6)))
-        * 100.0
-    ).round(2)
-    compare_df["turnaround_delta_pct"] = (
-        (1.0 - (compare_df["avg_turnaround_days"] / max(float(baseline_row["avg_turnaround_days"]), 1e-6)))
-        * 100.0
-    ).round(2)
-
-    st.markdown("### Comparison Overview")
-    st.markdown(
-        "<div class='comparison-callout'>"
-        "<strong>Baseline:</strong> FCFS + college_based. The cards below show raw metrics plus small percentage chips against that baseline."
-        "</div>",
-        unsafe_allow_html=True,
+    baseline_key = (baseline_row["scheduler"], baseline_row["allocator"])
+    baseline_details = next(
+        (
+            item
+            for item in comparison_details
+            if (item["scheduler"], item["allocator"]) == baseline_key
+        ),
+        None,
     )
 
-    selected_baseline = compare_df[
-        (compare_df["scheduler"] == "FCFS") & (compare_df["allocator"] == "college_based")
-    ]
-    if selected_baseline.empty:
-        selected_baseline = compare_df.iloc[[0]]
+    if baseline_details is None:
+        st.info("Baseline details not available for request-level comparison.")
+    else:
+        baseline_index = _build_request_index(baseline_details["completed_requests"])
+        baseline_requests = set(baseline_index.keys())
 
-    baseline_metrics = selected_baseline.iloc[0]
+        diff_rows = []
+        for item in comparison_details:
+            scheduler = item["scheduler"]
+            allocator = item["allocator"]
+            key = (scheduler, allocator)
+            if key == baseline_key:
+                continue
 
-    def _comparison_variant_card(row: pd.Series, is_baseline: bool = False) -> str:
-        throughput_pct = float(row["throughput_delta_pct"]) if not is_baseline else 0.0
-        wait_pct = float(row["wait_delta_pct"]) if not is_baseline else 0.0
-        turnaround_pct = float(row["turnaround_delta_pct"]) if not is_baseline else 0.0
-        throughput_class = "good" if throughput_pct >= 0 else "warn"
-        wait_class = "good" if wait_pct >= 0 else "warn"
-        turnaround_class = "good" if turnaround_pct >= 0 else "warn"
-        throughput_label = "baseline" if is_baseline else f"{throughput_pct:+.1f}%"
-        wait_label = "baseline" if is_baseline else f"{wait_pct:+.1f}%"
-        turnaround_label = "baseline" if is_baseline else f"{turnaround_pct:+.1f}%"
+            current_index = _build_request_index(item["completed_requests"])
+            current_requests = set(current_index.keys())
+            common = baseline_requests.intersection(current_requests)
 
-        return f"""
-        <div class="comparison-card">
-            <h4>{row['scheduler']} / {row['allocator']}</h4>
-            <div class="meta">Raw metrics plus change vs baseline</div>
-            <div class="comparison-big">
-                <div class="value">{float(row['avg_waiting_time_hours']):.2f}</div>
-                <div class="label">h avg wait</div>
-            </div>
-            <div class="comparison-pill-row">
-                <span class="comparison-pill neutral">{int(row['total_processed'])} processed</span>
-                <span class="comparison-pill neutral">{float(row['avg_turnaround_days']):.2f} d turnaround</span>
-                <span class="comparison-pill neutral">{float(row['throughput_req_per_day']):.2f} req/day</span>
-            </div>
-            <div class="comparison-pill-row" style="margin-top:0.55rem;">
-                <span class="comparison-pill {throughput_class}">Throughput {throughput_label}</span>
-                <span class="comparison-pill {wait_class}">Wait {wait_label}</span>
-                <span class="comparison-pill {turnaround_class}">Turnaround {turnaround_label}</span>
-            </div>
-        </div>
-        """
+            if not common:
+                continue
 
-    st.markdown("<div class='comparison-board'>", unsafe_allow_html=True)
-    st.markdown("<div class='comparison-grid'>", unsafe_allow_html=True)
-    st.markdown(_comparison_variant_card(baseline_metrics, is_baseline=True), unsafe_allow_html=True)
-    for _, row in compare_df.iterrows():
-        if row["scheduler"] == "FCFS" and row["allocator"] == "college_based":
-            continue
-        st.markdown(_comparison_variant_card(row), unsafe_allow_html=True)
-    st.markdown("</div></div>", unsafe_allow_html=True)
+            order_changed = 0
+            staff_changed = 0
+            rank_shift_total = 0.0
+            assign_delta_total = 0.0
+            complete_delta_total = 0.0
+
+            for request_id in common:
+                base = baseline_index[request_id]
+                current = current_index[request_id]
+                if base["rank"] != current["rank"]:
+                    order_changed += 1
+                    rank_shift_total += abs(current["rank"] - base["rank"])
+                if base.get("assigned_staff") != current.get("assigned_staff"):
+                    staff_changed += 1
+
+                base_assign = base.get("assignment_time")
+                current_assign = current.get("assignment_time")
+                if base_assign and current_assign:
+                    assign_delta_total += abs((current_assign - base_assign).total_seconds()) / 60.0
+
+                base_complete = base.get("completion_time")
+                current_complete = current.get("completion_time")
+                if base_complete and current_complete:
+                    complete_delta_total += abs((current_complete - base_complete).total_seconds()) / 60.0
+
+            total_common = len(common)
+            avg_rank_shift = rank_shift_total / max(order_changed, 1)
+            avg_assign_delta = assign_delta_total / total_common
+            avg_complete_delta = complete_delta_total / total_common
+
+            diff_rows.append(
+                {
+                    "scheduler": scheduler,
+                    "allocator": allocator,
+                    "order_changed_count": order_changed,
+                    "order_changed_pct": round((order_changed / total_common) * 100.0, 2),
+                    "avg_abs_rank_shift": round(avg_rank_shift, 2),
+                    "staff_changed_count": staff_changed,
+                    "staff_changed_pct": round((staff_changed / total_common) * 100.0, 2),
+                    "avg_assign_time_delta_min": round(avg_assign_delta, 2),
+                    "avg_complete_time_delta_min": round(avg_complete_delta, 2),
+                }
+            )
+
+        diff_df = pd.DataFrame(diff_rows)
+        if diff_df.empty:
+            st.info("No comparable request-level differences found.")
+        else:
+            raw_variant_options = [
+                (row["scheduler"], row["allocator"]) for row in diff_rows
+            ]
+
+            diff_df = diff_df.rename(
+                columns={
+                    "scheduler": "Scheduler",
+                    "allocator": "Allocator",
+                    "order_changed_count": "Order Changed Count",
+                    "order_changed_pct": "Order Changed %",
+                    "avg_abs_rank_shift": "Avg Abs Rank Shift",
+                    "staff_changed_count": "Staff Changed Count",
+                    "staff_changed_pct": "Staff Changed %",
+                    "avg_assign_time_delta_min": "Avg Assign Delta (min)",
+                    "avg_complete_time_delta_min": "Avg Complete Delta (min)",
+                }
+            )
+            diff_df["Scheduler"] = diff_df["Scheduler"].map(
+                lambda s: SCHEDULER_LABELS.get(s, str(s))
+            )
+            diff_df["Allocator"] = diff_df["Allocator"].map(
+                lambda a: ALLOCATOR_LABELS.get(a, str(a).replace("_", " ").title())
+            )
+
+            render_theme_table(diff_df, height_px=320)
+
+            fig_diff = go.Figure()
+            fig_diff.add_trace(
+                go.Bar(
+                    name="Order Changed %",
+                    x=diff_df["Allocator"],
+                    y=diff_df["Order Changed %"],
+                    marker_color="#a855f7",
+                )
+            )
+            fig_diff.add_trace(
+                go.Bar(
+                    name="Staff Changed %",
+                    x=diff_df["Allocator"],
+                    y=diff_df["Staff Changed %"],
+                    marker_color="#22d3ee",
+                )
+            )
+            fig_diff.update_layout(
+                title="Request-Level Changes vs Baseline",
+                xaxis_title="Allocator",
+                yaxis_title="Percent of Requests",
+                barmode="group",
+                height=320,
+            )
+            apply_plot_theme(fig_diff)
+            st.plotly_chart(fig_diff, use_container_width=True)
+
+            selected_variant = st.selectbox(
+                "Inspect Variant",
+                options=raw_variant_options,
+                format_func=lambda v: f"{SCHEDULER_LABELS.get(v[0], v[0])} | {ALLOCATOR_LABELS.get(v[1], v[1].replace('_', ' ').title())}",
+                index=0,
+            )
+
+            if selected_variant:
+                selected_sched, selected_alloc = selected_variant
+                selected_detail = next(
+                    (
+                        item
+                        for item in comparison_details
+                        if item["scheduler"] == selected_sched
+                        and item["allocator"] == selected_alloc
+                    ),
+                    None,
+                )
+                if selected_detail:
+                    current_index = _build_request_index(
+                        selected_detail["completed_requests"]
+                    )
+                    change_rows = []
+                    for request_id in baseline_requests.intersection(current_index.keys()):
+                        base = baseline_index[request_id]
+                        current = current_index[request_id]
+                        rank_shift = current["rank"] - base["rank"]
+                        base_assign = base.get("assignment_time")
+                        current_assign = current.get("assignment_time")
+                        assign_delta = None
+                        if base_assign and current_assign:
+                            assign_delta = round(
+                                (current_assign - base_assign).total_seconds() / 60.0, 2
+                            )
+                        change_rows.append(
+                            {
+                                "Request": request_id,
+                                "Rank Shift": rank_shift,
+                                "Assigned Staff": current.get("assigned_staff"),
+                                "Staff Changed": base.get("assigned_staff")
+                                != current.get("assigned_staff"),
+                                "Assign Delta (min)": assign_delta,
+                            }
+                        )
+
+                    change_df = pd.DataFrame(change_rows)
+                    change_df["_abs_shift"] = change_df["Rank Shift"].abs()
+                    change_df = change_df.sort_values(
+                        by=["_abs_shift", "Request"], ascending=[False, True]
+                    ).drop(columns=["_abs_shift"])
+                    render_theme_table(change_df.head(25), height_px=320)
 
 
 # ============================================================================
