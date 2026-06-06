@@ -421,7 +421,7 @@ DEFAULT_STATE = {
     "num_staff": len(COLLEGES),
     "quota_limit": 20,
     "enable_absence": False,
-    "total_requests": 200,
+    "total_requests": 100,
     "imbalance_factor": 0,
     "num_absent_staff": 0,
     "peak_mode": False,
@@ -1336,10 +1336,10 @@ st.sidebar.slider("Total Daily Requests", min_value=50, max_value=500, step=10, 
 st.sidebar.checkbox("Enable Urgency", value=False, key="urgency")
 def on_peak_mode_change():
     if st.session_state.peak_mode:
-        if st.session_state.total_requests == 200:
-            st.session_state.total_requests = 400
-    elif st.session_state.total_requests == 400:
-        st.session_state.total_requests = 200
+        if st.session_state.total_requests == 100:
+            st.session_state.total_requests = 300
+    elif st.session_state.total_requests == 300:
+        st.session_state.total_requests = 100
 
 st.sidebar.checkbox("Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change)
 st.sidebar.slider("College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")

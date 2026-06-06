@@ -602,13 +602,13 @@ class SimulationEngine:
     def _scenario_defaults(self, scenario: str) -> Dict:
         defaults = {
             "baseline": {
-                "total_requests": 200,
+                "total_requests": 100,
                 "urgency_base": 5,
                 "imbalance_factor": 0,
                 "num_absent_staff": 0,
             },
             "peak_period": {
-                "total_requests": 400,
+                "total_requests": 300,
                 "urgency_base": 5,
                 "imbalance_factor": 0,
                 "num_absent_staff": 0,
