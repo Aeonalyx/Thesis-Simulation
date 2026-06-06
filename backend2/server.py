@@ -7,10 +7,10 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 try:
     # Works when run from workspace root as a package
-    from backend1.scheduler_engine1 import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
+    from api.scheduler import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
 except ImportError:
     # Works when run directly from backend1/ as a script
-    from scheduler_engine1 import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
+    from api.scheduler import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend access

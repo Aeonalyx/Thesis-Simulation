@@ -17,18 +17,10 @@ import re
 import random
 try:
     # Works when run from workspace root as a package
-    from backend1.roc_utils import (
-        PRIORITY_ROC_WEIGHTS,
-        PRIORITY_ROC_WEIGHTS_BASE,
-        PRIORITY_ROC_WEIGHTS_FULL,
-    )
+    from backend.requests import PRIORITY_ROC_WEIGHTS
 except ImportError:
     # Works when run directly from backend1/ as a script
-    from roc_utils import (
-        PRIORITY_ROC_WEIGHTS,
-        PRIORITY_ROC_WEIGHTS_BASE,
-        PRIORITY_ROC_WEIGHTS_FULL,
-    )
+    from backend.requests import PRIORITY_ROC_WEIGHTS
 
 # ============================================================================
 # DEFAULT CONFIGURATION
@@ -206,7 +198,6 @@ class DocumentRequest:
         current_time: datetime,
         weights: Dict[str, float],
         workday_minutes: int,
-        urgency: bool = False,
     ) -> float:
         """Compute weighted priority score for this request at current_time."""
         self.update_status(current_time)
@@ -237,8 +228,6 @@ class DocumentRequest:
         else:
             payment_norm = 1.0 if bool(self.payment_status) else 0.0
 
-        urgency_norm = float(self.urgency) / 10.0 if urgency else 0.0
-
         scores = {
             "completeness_of_requirements": completeness_norm,
             "submission_time": submission_norm,
@@ -246,13 +235,10 @@ class DocumentRequest:
             "requester_status": requester_norm,
             "college_affiliation": college_norm,
             "payment_status": payment_norm,
-            "urgency": urgency_norm
         }
 
         total_score = 0.0
         for key, weight in weights.items():
-            if key == "urgency" and not urgency:
-                continue
             total_score += float(weight) * scores.get(key, 0.0)
 
         self.priority_score = _soft_cap(total_score, PRIORITY_SCORE_HALF_LIFE)
@@ -370,10 +356,9 @@ class WeightedPriorityScheduler:
         current_time: datetime,
         weights: Dict[str, float],
         workday_minutes: int,
-        urgency: bool = False,
     ) -> List[DocumentRequest]:
         for req in self.pending:
-            req.calculate_priority(current_time, weights, workday_minutes, urgency)
+            req.calculate_priority(current_time, weights, workday_minutes)
         return sorted(self.pending, key=lambda r: (-r.priority_score, r.submission_time))
 
 
@@ -391,24 +376,11 @@ class SimulationEngine:
         random_seed: Optional[int] = None,
         work_start: str = "08:00",
         work_end: str = "17:00",
-        urgency: bool = False,
     ):
         self.scheduler_type = (scheduler_type or "FCFS").upper().strip()
         self.allocator_type = (allocator_type or "college_based").strip().lower()
 
-        # Record whether urgency is enabled early so normalization can act on it.
-        self.urgency = urgency
-
-        # Select default ROC weight set: by default use the base (6 criteria).
-        # If the caller explicitly provided `priority_weights`, respect that.
-        if priority_weights is None:
-            default_weights = PRIORITY_ROC_WEIGHTS_FULL if self.urgency else PRIORITY_ROC_WEIGHTS_BASE
-        else:
-            default_weights = priority_weights
-
-        # Normalize the chosen weight set (this will also drop 'urgency' if
-        # urgency is disabled and an 'urgency' key exists in the provided dict).
-        self.priority_weights = self._normalize_weights(default_weights)
+        self.priority_weights = self._normalize_weights(priority_weights or PRIORITY_WEIGHTS)
 
         self.work_start_minutes = self._parse_clock_minutes(work_start, 8 * 60)
         self.work_end_minutes = self._parse_clock_minutes(work_end, 17 * 60)
@@ -439,7 +411,6 @@ class SimulationEngine:
         self.event_log: List[Dict] = []
         self._event_seq = 0
         self.absent_staff_ids: List[str] = []
-        
 
     # ---------------------------------------------------------------------
     # Time helpers
@@ -511,39 +482,14 @@ class SimulationEngine:
     # ---------------------------------------------------------------------
 
     def _normalize_weights(self, weights: Dict[str, float]) -> Dict[str, float]:
-        # Work on a copy so caller dict isn't mutated
-        src = dict(weights or {})
-
-        # If urgency is not enabled for this engine, ignore any supplied
-        # 'urgency' key so normalization only covers the active criteria.
-        if not getattr(self, "urgency", False) and "urgency" in src:
-            src.pop("urgency")
-
-        # Preserve canonical ordering from PRIORITY_WEIGHTS when possible.
-        canonical_keys = [k for k in PRIORITY_WEIGHTS.keys() if k in src]
-        # Append any non-canonical keys the user provided.
-        other_keys = [k for k in src.keys() if k not in canonical_keys]
-        keys = canonical_keys + other_keys
-
+        keys = list(PRIORITY_WEIGHTS.keys())
         clean: Dict[str, float] = {}
         for key in keys:
-            try:
-                raw = float(src.get(key, 0.0))
-            except Exception:
-                raw = 0.0
+            raw = float(weights.get(key, 0.0))
             clean[key] = max(raw, 0.0)
-
         total = sum(clean.values())
         if total <= 0:
-            # Fallback: use PRIORITY_WEIGHTS but also remove urgency if disabled.
-            fallback = dict(PRIORITY_WEIGHTS)
-            if not getattr(self, "urgency", False) and "urgency" in fallback:
-                fallback.pop("urgency")
-            ftotal = sum(float(v) for v in fallback.values())
-            if ftotal <= 0:
-                return fallback
-            return {k: float(v) / ftotal for k, v in fallback.items()}
-
+            return PRIORITY_WEIGHTS.copy()
         return {k: v / total for k, v in clean.items()}
 
     def _is_request_ready(self, request: DocumentRequest, current_time: datetime) -> bool:
@@ -602,13 +548,7 @@ class SimulationEngine:
     def _scenario_defaults(self, scenario: str) -> Dict:
         defaults = {
             "baseline": {
-                "total_requests": 100,
-                "urgency_base": 5,
-                "imbalance_factor": 0,
-                "num_absent_staff": 0,
-            },
-            "peak_period": {
-                "total_requests": 300,
+                "total_requests": 200,
                 "urgency_base": 5,
                 "imbalance_factor": 0,
                 "num_absent_staff": 0,
@@ -686,16 +626,6 @@ class SimulationEngine:
         if sum(requester_weights) <= 0:
             requester_weights = [1.0] * len(requester_types)
         document_types = list(DOCUMENT_COMPLEXITY.keys())
-        doc_weights = [1.0] * len(document_types)
-
-        if config.get("scenario") == "peak_period":
-            boost_map = {
-                "Official Transcript of Records (TOR) and Transfer Credentials (TC)": 3.0,
-                "Certification": 2.0,
-            }
-            doc_weights = [
-                float(boost_map.get(doc, 1.0)) for doc in document_types
-            ]
 
         morning_count = int(total_requests * 0.60)
         afternoon_count = int(total_requests * 0.20)
@@ -725,7 +655,7 @@ class SimulationEngine:
                 submission_offset_hours = self.rng.uniform(hour_min, hour_max)
                 submission_time = self.start_time + timedelta(hours=submission_offset_hours)
                 college = self.rng.choices(colleges, weights=weights, k=1)[0]
-                document_type = self.rng.choices(document_types, weights=doc_weights, k=1)[0]
+                document_type = self.rng.choice(document_types)
                 allowed_requesters = DOCUMENT_REQUESTER_RESTRICTIONS.get(document_type)
                 if allowed_requesters:
                     allowed = [r for r in requester_types if r in allowed_requesters]
@@ -858,14 +788,7 @@ class SimulationEngine:
         if mode == "earliest":
             return min(options, key=lambda item: (item[0], item[1].total_assigned, item[1].staff_id))
         if mode == "least_loaded":
-            return min(
-                options,
-                key=lambda item: (
-                    item[1].assignments_on_day(item[0].date()),
-                    item[0],
-                    item[1].staff_id,
-                ),
-            )
+            return min(options, key=lambda item: (item[1].total_assigned, item[0], item[1].staff_id))
         if mode == "pooled":
             return min(options, key=lambda item: (item[0], item[1].total_assigned, item[1].staff_id))
         return min(options, key=lambda item: (item[0], item[1].staff_id))
@@ -932,7 +855,6 @@ class SimulationEngine:
             return staff, slot, "pooled_earliest"
 
         # workload_based
-        target_day = earliest.date()
         same_options = self._build_staff_options(
             request,
             same_college,
@@ -940,26 +862,27 @@ class SimulationEngine:
             enforce_quota=True,
             exact_time=exact_time,
         )
-        same_day_same = [item for item in same_options if item[0].date() == target_day]
+        same_day_same = [item for item in same_options if item[0].date() == request_day]
         chosen = self._select_from_options(same_day_same, mode="least_loaded")
         if chosen:
             slot, staff = chosen
             return staff, slot, "same_college_least_loaded"
 
-        all_options = self._build_staff_options(
+        fallback_options = self._build_staff_options(
             request,
-            all_active,
+            other_staff,
             earliest,
             enforce_quota=True,
             exact_time=exact_time,
         )
-        same_day_any = [item for item in all_options if item[0].date() == target_day]
-        chosen = self._select_from_options(same_day_any, mode="least_loaded")
+        same_day_fallback = [item for item in fallback_options if item[0].date() == request_day]
+        chosen = self._select_from_options(same_day_fallback, mode="least_loaded")
         if chosen:
             slot, staff = chosen
-            return staff, slot, "least_loaded_same_day"
+            return staff, slot, "cross_college_same_day_fallback"
 
-        chosen = self._select_from_options(all_options, mode="earliest")
+        combined = same_options + fallback_options
+        chosen = self._select_from_options(combined, mode="earliest")
         if not chosen:
             return None
         slot, staff = chosen
@@ -1209,7 +1132,6 @@ class SimulationEngine:
                 current_time=current_time,
                 weights=self.priority_weights,
                 workday_minutes=self.workday_minutes,
-                urgency=self.urgency,
             )
 
             top_preview = [
