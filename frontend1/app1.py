@@ -971,82 +971,6 @@ def build_variant_summary_chart(compare_df: pd.DataFrame, title: str = "Summary 
     return fig
 
 
-def run_scenario_comparison_for_current_variant() -> List[Dict]:
-    last_run = st.session_state.get("last_run_config")
-    if not last_run or not st.session_state.simulation_results:
-        return []
-
-    engine_kwargs = dict(last_run.get("engine_kwargs", {}))
-    engine_kwargs["random_seed"] = int(
-        st.session_state.simulation_results.get("seed_used", st.session_state.manual_seed)
-    )
-
-    base_config = dict(last_run.get("run_config", {}))
-    absent_count = max(1, int(base_config.get("num_absent_staff", 1)))
-    imbalance_value = max(20, int(base_config.get("imbalance_factor", 40)))
-
-    scenario_specs = [
-        (
-            "Normal",
-            {
-                "scenario": "baseline",
-                "enable_absence": False,
-                "imbalance_factor": 0,
-                "num_absent_staff": 0,
-            },
-        ),
-        (
-            "Peak",
-            {
-                "scenario": "peak_period",
-                "enable_absence": False,
-                "imbalance_factor": 0,
-                "num_absent_staff": 0,
-            },
-        ),
-        (
-            "Absence",
-            {
-                "scenario": "baseline",
-                "enable_absence": True,
-                "imbalance_factor": 0,
-                "num_absent_staff": absent_count,
-            },
-        ),
-        (
-            "Imbalance",
-            {
-                "scenario": "baseline",
-                "enable_absence": False,
-                "imbalance_factor": imbalance_value,
-                "num_absent_staff": 0,
-            },
-        ),
-    ]
-
-    scenario_results: List[Dict] = []
-    for label, config_override in scenario_specs:
-        custom_config = dict(base_config)
-        custom_config.update(config_override)
-        engine = SimulationEngine(**engine_kwargs)
-        result = engine.run(custom_config=custom_config)
-        staff_load_values = list(result.get("staff_load", {}).values())
-        staff_std = float(pd.Series(staff_load_values).std(ddof=0)) if staff_load_values else 0.0
-        staff_mean = float(pd.Series(staff_load_values).mean()) if staff_load_values else 0.0
-        staff_cv = round(staff_std / max(staff_mean, 1.0), 4) if staff_mean else 0.0
-        scenario_results.append(
-            {
-                "scenario": label,
-                "avg_waiting_time_hours": result.get("avg_waiting_time_hours", 0.0),
-                "staff_load_std": round(staff_std, 2),
-                "staff_load_cv": staff_cv,
-                "throughput_req_per_day": result.get("throughput_req_per_day", 0.0),
-            }
-        )
-
-    return scenario_results
-
-
 def build_scenario_performance_chart(scenario_rows: List[Dict]) -> go.Figure:
     if not scenario_rows:
         return go.Figure()
@@ -1814,20 +1738,6 @@ if results.get("scheduler_type") == "WEIGHTED":
             st.info("Priority score distribution is not available for the selected simulation.")
 else:
     st.info("Priority score distribution is only shown for the WEIGHTED scheduler.")
-
-scenario_rows = run_scenario_comparison_for_current_variant()
-if scenario_rows:
-    st.subheader(f"Scenario-Specific Performance — {variant_label}")
-    st.info(
-        "Comparing waiting time and workload variance for Normal, Peak, Absence, and Imbalance conditions "
-        f"under {variant_label}."
-    )
-    fig_scenario = build_scenario_performance_chart(scenario_rows)
-    if fig_scenario.data:
-        st.plotly_chart(fig_scenario, use_container_width=True)
-    else:
-        st.info("Scenario comparison data is not available for the current configuration.")
-
 
 # ============================================================================
 # STAFF LOAD + TIMELINE CHARTS
