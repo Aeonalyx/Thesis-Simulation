@@ -863,82 +863,6 @@ def build_weighted_priority_distribution_chart(
     return fig
 
 
-def build_variant_wait_balance_chart(compare_df: pd.DataFrame) -> go.Figure:
-    if compare_df is None or compare_df.empty:
-        return go.Figure()
-
-    df = compare_df.copy()
-    df["variant"] = df.apply(
-        lambda row: format_variant_label(row["scheduler"], row["allocator"]),
-        axis=1,
-    )
-
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(
-        go.Bar(
-            x=df["variant"],
-            y=df["avg_waiting_time_hours"],
-            name="Avg Waiting Time (h)",
-            marker_color="#a855f7",
-        ),
-        secondary_y=False,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=df["variant"],
-            y=df["staff_load_std"],
-            name="Staff Load Std Dev",
-            mode="lines+markers",
-            marker=dict(color="#22d3ee", size=8),
-            line=dict(width=2),
-        ),
-        secondary_y=True,
-    )
-
-    fig.update_layout(
-        title="Variant Wait Balance Comparison",
-        height=420,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    )
-    fig.update_xaxes(title_text="Variant")
-    fig.update_yaxes(title_text="Average Waiting Time (h)", secondary_y=False)
-    fig.update_yaxes(title_text="Staff Load Std Dev", secondary_y=True)
-    apply_plot_theme(fig)
-    return fig
-
-
-def build_workload_distribution_chart(compare_df: pd.DataFrame, title: str = "Workload Distribution Comparison") -> go.Figure:
-    if compare_df is None or compare_df.empty:
-        return go.Figure()
-
-    df = compare_df.copy()
-    df["variant"] = df.apply(
-        lambda row: format_variant_label(row["scheduler"], row["allocator"]),
-        axis=1,
-    )
-    fig = go.Figure(
-        data=[
-            go.Bar(
-                x=df["variant"],
-                y=df["staff_load_std"],
-                marker_color="#a855f7",
-                text=df["staff_load_std"],
-                textposition="outside",
-                customdata=df[["avg_waiting_time_hours"]],
-                hovertemplate="%{x}<br>Std Dev: %{y}<br>Avg Wait: %{customdata[0]} h<extra></extra>",
-            )
-        ]
-    )
-    fig.update_layout(
-        title="Workload Distribution by Variant",
-        height=420,
-        xaxis_title="Variant",
-        yaxis_title="Staff Load Std Dev",
-    )
-    apply_plot_theme(fig)
-    return fig
-
-
 def build_workload_imbalance_chart(compare_df: pd.DataFrame, title: str = "Workload Imbalance and Utilization Variance") -> go.Figure:
     if compare_df is None or compare_df.empty:
         return go.Figure()
@@ -956,6 +880,10 @@ def build_workload_imbalance_chart(compare_df: pd.DataFrame, title: str = "Workl
             y=df["staff_load_std"],
             name="Staff Load Std Dev",
             marker_color="#a855f7",
+            text=df["staff_load_std"],
+            textposition="outside",
+            customdata=df[["avg_waiting_time_hours"]],
+            hovertemplate="%{x}<br>Std Dev: %{y}<br>Avg Wait: %{customdata[0]} h<extra></extra>",
         ),
         secondary_y=False,
     )
@@ -972,7 +900,7 @@ def build_workload_imbalance_chart(compare_df: pd.DataFrame, title: str = "Workl
     )
     fig.update_layout(
         title="Workload Imbalance by Variant",
-        height=420,
+        height=500,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     fig.update_xaxes(title_text="Variant")
@@ -987,22 +915,33 @@ def build_variant_summary_chart(compare_df: pd.DataFrame, title: str = "Summary 
         return go.Figure()
 
     df = compare_df.copy()
+
     df["variant"] = df.apply(
         lambda row: format_variant_label(row["scheduler"], row["allocator"]),
         axis=1,
     )
+
     summary_df = df.melt(
         id_vars=["variant"],
-        value_vars=["avg_waiting_time_hours", "throughput_req_per_day", "staff_load_std"],
+        value_vars=[
+            "avg_waiting_time_hours",
+            "throughput_req_per_day",
+            "staff_load_std",
+        ],
         var_name="metric",
         value_name="value",
     )
+
     metric_names = {
         "avg_waiting_time_hours": "Avg Waiting Time (h)",
         "throughput_req_per_day": "Throughput (req/day)",
         "staff_load_std": "Staff Load Std Dev",
     }
-    summary_df["metric"] = summary_df["metric"].map(metric_names).fillna(summary_df["metric"])
+
+    summary_df["metric"] = summary_df["metric"].map(metric_names)
+
+    # optional: "result number" (rank within metric)
+    summary_df["result_no"] = summary_df.groupby("metric").cumcount() + 1
 
     fig = px.bar(
         summary_df,
@@ -1011,10 +950,24 @@ def build_variant_summary_chart(compare_df: pd.DataFrame, title: str = "Summary 
         color="metric",
         barmode="group",
         title=title,
-        height=420,
+        height=500,
         labels={"variant": "Variant", "value": "Metric Value", "metric": "Metric"},
+        text="value",  # show value on top
     )
+
+    fig.update_traces(
+        textposition="outside",
+        hovertemplate=(
+            "<b>%{x}</b><br>"
+            "Metric: %{legendgroup}<br>"
+            "Value: %{y:.4f}<br>"
+            "Result #: %{customdata}<extra></extra>"
+        ),
+        customdata=summary_df[["result_no"]],
+    )
+
     apply_plot_theme(fig)
+
     return fig
 
 
@@ -2029,57 +1982,6 @@ if engine.completed:
     else:
         st.caption("No completed requests for the selected college.")
 
-
-# ============================================================================
-# DOCUMENT REQUEST SPREAD
-# ============================================================================
-
-spread_title_col, spread_radio_col = st.columns([4, 1])
-
-with spread_title_col:
-    st.subheader("Document Request Spread")
-
-with spread_radio_col:
-    spread_view = st.radio(
-        "View",
-        ["Generated", "Completed"],
-        horizontal=True,
-        key="spread_view",
-    )
-
-if spread_view == "Generated":
-    requests_to_analyze = results.get("generated_requests", [])
-    title_suffix = "Generated Requests"
-else:
-    requests_to_analyze = [req.to_dict() for req in engine.completed] if engine.completed else []
-    title_suffix = "Completed Requests"
-
-if requests_to_analyze:
-    doc_counts = {}
-    for req in requests_to_analyze:
-        doc_type = req.get("document_type", "Unknown") if isinstance(req, dict) else req.document_type
-        doc_counts[doc_type] = doc_counts.get(doc_type, 0) + 1
-
-    doc_df = pd.DataFrame(
-        [{"Document Type": k, "Count": v} for k, v in sorted(doc_counts.items(), key=lambda x: x[1], reverse=True)]
-    )
-
-    fig_spread = px.bar(
-        doc_df,
-        x="Document Type",
-        y="Count",
-        text="Count",
-        title=f"Document Type Distribution: {title_suffix} — {variant_label}",
-        color="Count",
-        color_continuous_scale=["#a855f7", "#7c3aed", "#22d3ee"],
-        height=500,
-    )
-    apply_plot_theme(fig_spread)
-    st.plotly_chart(fig_spread, use_container_width=True)
-else:
-    st.info(f"No {title_suffix.lower()} available.")
-
-
 # ============================================================================
 # REQUEST INSPECTION
 # ============================================================================
@@ -2601,16 +2503,6 @@ if st.session_state.comparison_df is not None:
         render_theme_table(display_df, height_px=420)
 
         # Also show charts for the filtered variants
-        compare_fig = build_variant_wait_balance_chart(compare_df)
-        if compare_fig.data:
-            st.subheader("Average Waiting Time by Variant")
-            st.plotly_chart(compare_fig, use_container_width=True)
-
-        dist_fig = build_workload_distribution_chart(compare_df)
-        if dist_fig.data:
-            st.subheader("Workload Distribution by Variant")
-            st.plotly_chart(dist_fig, use_container_width=True)
-
         imbalance_fig = build_workload_imbalance_chart(compare_df)
         if imbalance_fig.data:
             st.subheader("Workload Imbalance by Variant")
