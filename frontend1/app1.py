@@ -1888,6 +1888,7 @@ if engine.completed:
         color_discrete_sequence=CHART_COLORWAY,
         title=f"Assignments per Day by College — {variant_label}",
         height=450,
+        text="Count" if st.session_state.labels_outside else None,
     )
     apply_plot_theme(fig_timeline)
     st.plotly_chart(fig_timeline, use_container_width=True)
@@ -2677,6 +2678,7 @@ if st.session_state.comparison_df is not None and comparison_details:
                     x=diff_df["Allocator"],
                     y=diff_df["Staff Changed %"],
                     marker_color="#22d3ee",
+                    text=diff_df["Staff Changed %"].apply(lambda v: f"{v:.1f}%"),
                 )
             )
             fig_diff.update_layout(
