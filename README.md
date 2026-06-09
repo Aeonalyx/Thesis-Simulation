@@ -73,3 +73,29 @@ CRITERIA_LABELS = {
     "college_affiliation": "College affiliation",
     "payment_status": "Payment status",
 }
+
+
+project/
+│
+├── app.py                  # ENTRY POINT (very small)
+│
+├── config/
+│   └── settings.py        # constants, config, env vars
+│
+├── state/
+│   └── session.py         # st.session_state management
+│
+├── services/
+│   ├── api_service.py     # API calls / backend requests
+│   ├── model_service.py   # ML inference / processing logic
+│
+├── ui/
+│   ├── sidebar.py        # sidebar UI
+│   ├── dashboard.py      # main dashboard UI
+│   ├── results.py        # result display components
+│
+├── utils/
+│   ├── preprocessing.py
+│   ├── helpers.py
+│
+└── assets/ (optional)
