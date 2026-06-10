@@ -7,7 +7,8 @@ from typing import Any
 # ============================================================================
 
 CHART_COLORWAY = ["#a855f7", "#7c3aed", "#22d3ee", "#c084fc", "#38bdf8", "#f472b6"]
-PRESET_FILE = os.path.join(os.path.dirname(__file__), "presets.json")
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+PRESET_FILE = os.path.join(BASE_DIR, "data", "presets.json")
 
 CRITERIA_KEYS = list(PRIORITY_WEIGHTS.keys())
 CRITERIA_LABELS = {
