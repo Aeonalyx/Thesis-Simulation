@@ -5,14 +5,14 @@ import re
 import random
 try:
     # Works when run from workspace root as a package
-    from backend1.roc_utils import (
+    from roc_utils import (
         PRIORITY_ROC_WEIGHTS,
         PRIORITY_ROC_WEIGHTS_BASE,
         PRIORITY_ROC_WEIGHTS_FULL,
     )
 except ImportError:
     # Works when run directly from backend1/ as a script
-    from backend1.roc_utils import (
+    from roc_utils import (
         PRIORITY_ROC_WEIGHTS,
         PRIORITY_ROC_WEIGHTS_BASE,
         PRIORITY_ROC_WEIGHTS_FULL,

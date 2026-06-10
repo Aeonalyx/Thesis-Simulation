@@ -145,9 +145,9 @@ def render_metrics(ctx):
     else:
         st.info("Priority score distribution is only shown for the WEIGHTED scheduler.")
 
-    # ============================================================================
-    # STAFF LOAD + TIMELINE CHARTS
-    # ============================================================================
+# ============================================================================
+# STAFF LOAD + TIMELINE CHARTS
+# ============================================================================
 
     st.header("Staff and Timeline")
 

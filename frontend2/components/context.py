@@ -3,6 +3,9 @@ from dataclasses import dataclass
 from frontend2.components.simulation import build_staff_college_map
 from frontend2.components.config import SCHEDULER_LABELS, ALLOCATOR_LABELS
 
+# ============================================================================
+# CONTEXT UTILS
+# ============================================================================
 
 @dataclass
 class SimulationContext:

@@ -12,7 +12,6 @@ render_theme_table,
 staff_rows_with_day_separators, 
 )
 
-
 from components.config import SPEED_OPTIONS
 
 from components.simulation import (
