@@ -970,45 +970,6 @@ def build_variant_summary_chart(compare_df: pd.DataFrame, title: str = "Summary 
 
     return fig
 
-
-def build_scenario_performance_chart(scenario_rows: List[Dict]) -> go.Figure:
-    if not scenario_rows:
-        return go.Figure()
-
-    scenario_df = pd.DataFrame(scenario_rows)
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(
-        go.Bar(
-            x=scenario_df["scenario"],
-            y=scenario_df["avg_waiting_time_hours"],
-            name="Avg Waiting Time (h)",
-            marker_color="#a855f7",
-        ),
-        secondary_y=False,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=scenario_df["scenario"],
-            y=scenario_df["staff_load_std"],
-            name="Staff Load Std Dev",
-            mode="lines+markers",
-            marker=dict(color="#22d3ee", size=8),
-            line=dict(width=2),
-        ),
-        secondary_y=True,
-    )
-    fig.update_layout(
-        title="",
-        height=420,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    )
-    fig.update_xaxes(title_text="Scenario")
-    fig.update_yaxes(title_text="Avg Waiting Time (h)", secondary_y=False)
-    fig.update_yaxes(title_text="Staff Load Std Dev", secondary_y=True)
-    apply_plot_theme(fig)
-    return fig
-
-
 def routing_events(event_log: List[Dict]) -> List[Dict]:
     """Keep only request-routing decisions for request-by-request playback."""
     decision_types = {"ASSIGN", "WAITING"}
