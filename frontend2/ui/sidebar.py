@@ -4,10 +4,10 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from backend1.scheduler_engine1 import (
+from backend2.config import (
 COLLEGES, 
-PRIORITY_ROC_WEIGHTS_FULL,
 )
+from backend2.engine import PRIORITY_ROC_WEIGHTS_FULL
 
 from components.config import (
 SCHEDULER_OPTIONS,
@@ -72,7 +72,7 @@ def render_sidebar():
 
     max_absent_staff = max(0, int(st.session_state.num_staff) - 1)
     st.sidebar.checkbox(
-        "Enable Staff Absence",
+        "👥 Enable Staff Absence",
         key="enable_absence",
         disabled=(max_absent_staff == 0),
         help="Turn on to model staff being absent during the run.",
@@ -101,8 +101,8 @@ def render_sidebar():
     st.sidebar.time_input("Workday End", key="work_end_time")
 
     st.sidebar.subheader("Demand")
-    st.sidebar.slider("Total Daily Requests", min_value=50, max_value=500, step=10, key="total_requests")
-    st.sidebar.checkbox("Enable Urgency", value=False, key="urgency")
+    st.sidebar.slider("⚙️ Total Daily Requests", min_value=50, max_value=500, step=10, key="total_requests")
+    st.sidebar.checkbox("⚡ Enable Urgency", value=False, key="urgency")
     def on_peak_mode_change():
         if st.session_state.peak_mode:
             # store original ONLY once
@@ -115,8 +115,8 @@ def render_sidebar():
             if "base_total_requests" in st.session_state:
                 st.session_state.total_requests = st.session_state.base_total_requests
 
-    st.sidebar.checkbox("Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change)
-    st.sidebar.slider("College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
+    st.sidebar.checkbox("🔥 Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change)
+    st.sidebar.slider("⚖️ College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
 
     st.sidebar.subheader("Seed")
     st.sidebar.radio("Seed Mode", ["Auto", "Manual"], key="seed_mode", horizontal=True)

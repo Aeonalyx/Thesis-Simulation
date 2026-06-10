@@ -16,8 +16,9 @@ build_workload_imbalance_chart,
 build_variant_summary_chart,
 )
 
-from backend1.scheduler_engine1 import (
+from backend2.engine import (
 SimulationEngine,
+calculate_priority
 )
 
 from components.config import (
@@ -430,6 +431,7 @@ def render_comparison(ctx):
                         x=diff_df["Allocator"],
                         y=diff_df["Order Changed %"],
                         marker_color="#a855f7",
+                        text=diff_df["Order Changed %"].apply(lambda v: f"{v:.1f}%"),
                     )
                 )
                 fig_diff.add_trace(

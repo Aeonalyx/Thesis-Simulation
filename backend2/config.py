@@ -1,22 +1,4 @@
-from datetime import datetime, timedelta, date
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
-import re
-import random
-try:
-    # Works when run from workspace root as a package
-    from roc_utils import (
-        PRIORITY_ROC_WEIGHTS,
-        PRIORITY_ROC_WEIGHTS_BASE,
-        PRIORITY_ROC_WEIGHTS_FULL,
-    )
-except ImportError:
-    # Works when run directly from backend1/ as a script
-    from roc_utils import (
-        PRIORITY_ROC_WEIGHTS,
-        PRIORITY_ROC_WEIGHTS_BASE,
-        PRIORITY_ROC_WEIGHTS_FULL,
-    )
+from backend2.roc_utils import PRIORITY_ROC_WEIGHTS
 
 # ============================================================================
 # DEFAULT CONFIGURATION

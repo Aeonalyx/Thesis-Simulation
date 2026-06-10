@@ -18,17 +18,15 @@ render_theme_table,
 build_baseline_queue_dynamics_chart, 
 build_weighted_priority_distribution_chart,
 )
-
-from backend1.scheduler_engine1 import (
+from backend2.config import (
 COLLEGES, 
 DOCUMENT_COMPLEXITY,
-COLLEGE_PRIORITY,
 REQUESTER_PRIORITY,
-REQUESTER_PRIORITY_MAX,
-DocumentRequest, 
-_duration_to_schedule, 
-_soft_cap, 
+REQUESTER_PRIORITY_MAX, 
 )
+from backend2.engine import calculate_priority
+from backend2.models import DocumentRequest
+from backend2.rules import _duration_to_schedule, _soft_cap, COLLEGE_PRIORITY
 
 from components.config import (
 CHART_COLORWAY, 
@@ -453,29 +451,37 @@ def render_metrics(ctx):
         if is_weighted_scheduler:
             st.subheader("Priority Score Progression")
 
-            def _score_at(request_obj: DocumentRequest, at_time: Optional[datetime]) -> Optional[float]:
-                if at_time is None:
-                    return None
-                original_state = (
-                    request_obj.completeness_of_requirements,
-                    request_obj.payment_status,
-                    request_obj.requirements_stage,
-                    request_obj.priority_score,
-                )
-                try:
-                    return request_obj.calculate_priority(
-                        at_time,
-                        engine.priority_weights,
-                        engine.workday_minutes,
-                        urgency=engine.urgency,
-                    )
-                finally:
-                    (
+            def _score_at(
+                    request_obj: DocumentRequest,
+                    at_time: Optional[datetime]
+                ) -> Optional[float]:
+
+                    if at_time is None:
+                        return None
+
+                    original_state = (
                         request_obj.completeness_of_requirements,
                         request_obj.payment_status,
                         request_obj.requirements_stage,
                         request_obj.priority_score,
-                    ) = original_state
+                    )
+
+                    try:
+                        return calculate_priority(
+                            request_obj,
+                            at_time,
+                            engine.priority_weights,
+                            engine.workday_minutes,
+                            urgency=engine.urgency,
+                        )
+
+                    finally:
+                        (
+                            request_obj.completeness_of_requirements,
+                            request_obj.payment_status,
+                            request_obj.requirements_stage,
+                            request_obj.priority_score,
+                        ) = original_state
 
             stage_points = [
                 ("Submitted", selected_req.submission_time),

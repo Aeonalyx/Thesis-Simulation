@@ -1,7 +1,7 @@
 from datetime import time, datetime
 from frontend2.components.config import weight_state_key
 from frontend2.components.config import CRITERIA_KEYS, PRIORITY_WEIGHTS, PRESET_FILE
-from backend1.scheduler_engine1 import COLLEGES
+from backend2.config import COLLEGES
 from typing import List, Dict
 
 import os

@@ -1,25 +1,8 @@
-from datetime import datetime, timedelta, date
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from datetime import timedelta
+from typing import Dict, Tuple
 import re
-import random
-try:
-    # Works when run from workspace root as a package
-    from roc_utils import (
-        PRIORITY_ROC_WEIGHTS,
-        PRIORITY_ROC_WEIGHTS_BASE,
-        PRIORITY_ROC_WEIGHTS_FULL,
-    )
-except ImportError:
-    # Works when run directly from backend1/ as a script
-    from roc_utils import (
-        PRIORITY_ROC_WEIGHTS,
-        PRIORITY_ROC_WEIGHTS_BASE,
-        PRIORITY_ROC_WEIGHTS_FULL,
-    )
 
-from config import COLLEGE_POPULATION, COLLEGES
-
+from backend2.config import COLLEGE_POPULATION, COLLEGES
 
 _DURATION_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(day|days|hour|hours)\s*$", re.IGNORECASE)
 

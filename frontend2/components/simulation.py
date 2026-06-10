@@ -1,7 +1,7 @@
 from frontend2.components.config import PRIORITY_WEIGHTS
 from frontend2.components.state import active_criteria, weight_state_key, collect_ui_config
 from typing import Dict, Optional, List
-from backend1.scheduler_engine1 import SimulationEngine
+from backend2.engine import SimulationEngine
 from datetime import datetime
 from frontend2.components.config import humanize_event_text
 

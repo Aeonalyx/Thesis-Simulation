@@ -1,4 +1,4 @@
-from backend1.scheduler_engine1 import PRIORITY_WEIGHTS
+from backend2.config import PRIORITY_WEIGHTS
 import os
 from typing import Any
 
