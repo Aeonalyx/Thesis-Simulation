@@ -21,6 +21,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+import requests
 
 
 # Add project root to path so frontend1 can import backend1 modules reliably.
@@ -40,6 +41,39 @@ from backend1.scheduler_engine1 import (  # noqa: E402
     SimulationEngine,
     _duration_to_schedule,
 )
+
+# ============================================================================
+# BACKEND API CONFIGURATION
+# ============================================================================
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:5000")
+
+DEFAULT_CONFIG = {
+    "colleges": ["COE", "CED", "CASS", "CSM", "CEBA", "CCS", "CHS"],
+    "document_types": list(DOCUMENT_COMPLEXITY.keys()),
+    "document_complexity": DOCUMENT_COMPLEXITY,
+    "college_population": {"COE": 0.2454, "CED": 0.1921, "CASS": 0.1908, "CSM": 0.1553, "CEBA": 0.0983, "CCS": 0.0787, "CHS": 0.0394},
+    "allocator_types": ["college_based", "workload_based", "pooled", "quota_free"],
+    "scheduler_types": ["FCFS", "WEIGHTED"],
+    "scenarios": ["baseline", "staff_absence", "peak_urgency", "workload_imbalance", "peak_period"],
+    "priority_weights_base": PRIORITY_WEIGHTS,
+    "priority_weights_full": PRIORITY_ROC_WEIGHTS_FULL
+}
+
+@st.cache_data(ttl=60)
+def fetch_backend_config():
+    try:
+        response = requests.get(f"{BACKEND_URL}/config", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except requests.exceptions.RequestException:
+        pass
+    return DEFAULT_CONFIG
+
+backend_config = fetch_backend_config()
+COLLEGES = backend_config.get("colleges", DEFAULT_CONFIG["colleges"])
+DOCUMENT_COMPLEXITY = backend_config.get("document_complexity", DEFAULT_CONFIG["document_complexity"])
+ALLOCATOR_OPTIONS = backend_config.get("allocator_types", DEFAULT_CONFIG["allocator_types"])
+SCHEDULER_OPTIONS = backend_config.get("scheduler_types", DEFAULT_CONFIG["scheduler_types"])
 
 
 CRITERIA_KEYS = list(PRIORITY_WEIGHTS.keys())
@@ -67,6 +101,44 @@ def active_criteria() -> List[str]:
     if st.session_state.get("urgency", False) and "urgency" not in keys:
         keys = keys + ["urgency"]
     return keys
+
+# ============================================================================
+# DATA WRAPPERS (To parse API JSON back into frontend-compatible objects)
+# ============================================================================
+class RequestRecord(DocumentRequest):
+    def __init__(self, data: dict):
+        super().__init__(
+            request_id=str(data.get("request_id", "")),
+            college=str(data.get("college", "")),
+            document_type=str(data.get("document_type", "")),
+            urgency=int(data.get("urgency", 5)),
+            requester_type=str(data.get("requester_status", "")),
+            submission_time=self._parse_time(data.get("submission_time")) or datetime.now(),
+            completeness_of_requirements=float(data.get("completeness_of_requirements", 1.0)),
+            payment_status=str(data.get("payment_status", "Paid")),
+            requirements_stage=str(data.get("requirements_stage", "complete")),
+            requirements_partial_time=self._parse_time(data.get("requirements_partial_time")),
+            requirements_complete_time=self._parse_time(data.get("requirements_complete_time")),
+            payment_time=self._parse_time(data.get("payment_time")),
+            ready_time=self._parse_time(data.get("ready_time")),
+            priority_score=float(data.get("priority_score", 0.0)),
+            assignment_time=self._parse_time(data.get("assignment_time")),
+            completion_time=self._parse_time(data.get("completion_time")),
+            assigned_staff=str(data.get("assigned_staff")) if data.get("assigned_staff") else None,
+        )
+
+    @staticmethod
+    def _parse_time(time_str):
+        if not time_str: return None
+        try: return datetime.fromisoformat(str(time_str))
+        except Exception: return None
+
+class StaffRecord:
+    def __init__(self, data: dict):
+        self.staff_id = str(data.get("staff_id", ""))
+        self.name = str(data.get("name", ""))
+        self.college_affiliation = str(data.get("college_affiliation", ""))
+        self.quota_limit = int(data.get("quota_limit", 20))
 
 # ============================================================================
 # PAGE CONFIG
@@ -559,52 +631,67 @@ def clear_run_state():
     st.session_state.playback_playing = False
 
 
-def build_engine_and_run_config() -> Dict:
+def build_api_payload() -> Dict:
     weights = normalized_weights_from_ui()
     manual_seed = int(st.session_state.manual_seed) if st.session_state.seed_mode == "Manual" else None
     scenario = "peak_period" if st.session_state.peak_mode else "baseline"
-
-    engine_kwargs = {
+    return {
         "scheduler_type": st.session_state.scheduler_type,
         "allocator_type": st.session_state.allocator_type,
-        "staff_config": {
-            "num_staff": int(st.session_state.num_staff),
-            "quota_limit": int(st.session_state.quota_limit),
-        },
-        "priority_weights": None if (st.session_state.urgency and sum(weights.get(k, 0.0) for k in weights if k != "urgency") <= 1e-9) else weights,
+        "num_staff": int(st.session_state.num_staff),
+        "quota_limit": int(st.session_state.quota_limit),
+        "total_requests": int(st.session_state.total_requests),
+        "urgency_base": 8 if st.session_state.peak_mode else 5,
+        "imbalance_factor": int(st.session_state.imbalance_factor),
+        "num_absent_staff": int(st.session_state.num_absent_staff) if st.session_state.enable_absence else 0,
         "random_seed": manual_seed,
         "work_start": st.session_state.work_start_time.strftime("%H:%M"),
         "work_end": st.session_state.work_end_time.strftime("%H:%M"),
-        "urgency": bool(st.session_state.urgency),
-    }
-
-    run_config = {
+        "priority_weights": weights,
         "scenario": scenario,
-        "total_requests": int(st.session_state.total_requests),
-        "urgency": bool(st.session_state.urgency),
-        "imbalance_factor": int(st.session_state.imbalance_factor),
-        "num_absent_staff": int(st.session_state.num_absent_staff) if st.session_state.enable_absence else 0,
+        "urgency": bool(st.session_state.urgency)
     }
-
-    export_bundle = {
-        "engine_kwargs": engine_kwargs,
-        "run_config": run_config,
-        "ui_config": collect_ui_config(),
-    }
-    return export_bundle
 
 
 def run_simulation_now():
-    payload = build_engine_and_run_config()
-    engine = SimulationEngine(**payload["engine_kwargs"])
-    results = engine.run(custom_config=payload["run_config"])
+    payload = build_api_payload()
+    with st.spinner("Running simulation on backend..."):
+        try:
+            response = requests.post(f"{BACKEND_URL}/simulate", json=payload, timeout=120)
+            if response.status_code == 200:
+                data = response.json()
+                results = data.get("results", {})
+                
+                # Parse API JSON into frontend-compatible objects
+                completed_requests = [RequestRecord(req) for req in results.get("completed_requests", [])]
+                generated_requests = [RequestRecord(req) for req in results.get("generated_requests", [])]
+                waiting_queue = [RequestRecord(req) for req in results.get("waiting_queue", [])]
+                staff_pool = [StaffRecord(s) for s in results.get("staff_info", [])]
+                
+                # Mock engine object to maintain compatibility with existing UI logic
+                class MockEngine:
+                    pass
+                mock_engine = MockEngine()
+                mock_engine.completed = completed_requests
+                mock_engine.generated_requests = generated_requests
+                mock_engine.waiting_queue = waiting_queue
+                mock_engine.staff_pool = staff_pool
+                mock_engine.priority_weights = results.get("priority_weights", {})
+                mock_engine.workday_minutes = 9 * 60
+                mock_engine.urgency = payload.get("urgency", False)
+                mock_engine.start_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                
+                st.session_state.simulation_engine = mock_engine
+                st.session_state.simulation_results = results
+                st.session_state.last_run_config = {"engine_kwargs": payload, "run_config": payload}
+                st.session_state.playback_frame = 0
+                st.session_state.playback_frame_ui = 1
+                st.session_state.playback_playing = False
+            else:
+                st.error(f"Backend error: {response.text}")
+        except requests.exceptions.RequestException as e:
+            st.error(f"Failed to connect to backend at {BACKEND_URL}: {e}. Ensure the Flask server is running.")
 
-    st.session_state.simulation_engine = engine
-    st.session_state.simulation_results = results
-    st.session_state.last_run_config = payload
-    st.session_state.playback_frame = 0
-    st.session_state.playback_frame_ui = 1
-    st.session_state.playback_playing = False
 
 
 def parse_event_time(value: str) -> datetime:
@@ -719,16 +806,18 @@ def run_variant_for_figure(scheduler_type: str, allocator_type: str) -> Optional
     last_run = st.session_state.get("last_run_config")
     if not last_run:
         return None
-
-    engine_kwargs = dict(last_run.get("engine_kwargs", {}))
-    engine_kwargs["scheduler_type"] = scheduler_type
-    engine_kwargs["allocator_type"] = allocator_type
-    engine_kwargs["random_seed"] = int(
-        st.session_state.simulation_results.get("seed_used", st.session_state.manual_seed)
-    )
-
-    engine = SimulationEngine(**engine_kwargs)
-    return engine.run(custom_config=last_run.get("run_config", {}))
+    payload = dict(last_run.get("engine_kwargs", {}))
+    payload["scheduler_type"] = scheduler_type
+    payload["allocator_type"] = allocator_type
+    payload["random_seed"] = int(st.session_state.simulation_results.get("seed_used", st.session_state.manual_seed))
+    
+    try:
+        response = requests.post(f"{BACKEND_URL}/simulate", json=payload, timeout=120)
+        if response.status_code == 200:
+            return response.json().get("results", {})
+    except requests.exceptions.RequestException:
+        pass
+    return None
 
 
 def build_baseline_queue_dynamics_chart(event_log: List[Dict], variant_label: str = "") -> go.Figure:
@@ -2223,70 +2312,58 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
         compare_details = []
         same_seed = int(results.get("seed_used", st.session_state.manual_seed))
 
-        for scheduler in compare_schedulers:
-            for allocator in compare_allocators:
-                compare_engine = SimulationEngine(
-                    scheduler_type=scheduler,
-                    allocator_type=allocator,
-                    staff_config={
-                        "num_staff": int(st.session_state.num_staff),
-                        "quota_limit": int(st.session_state.quota_limit),
-                    },
-                    priority_weights=normalized_weights_from_ui(),
-                    random_seed=same_seed,
-                    work_start=st.session_state.work_start_time.strftime("%H:%M"),
-                    work_end=st.session_state.work_end_time.strftime("%H:%M"),
-                    urgency= st.session_state.urgency,
-                )
-                compare_result = compare_engine.run(
-                    custom_config={
-                        "scenario": "peak_period" if st.session_state.peak_mode else "baseline",
-                        "total_requests": int(st.session_state.total_requests),
-                        "urgency": bool(st.session_state.urgency),
-                        "imbalance_factor": int(st.session_state.imbalance_factor),
-                        "num_absent_staff": int(st.session_state.num_absent_staff),
-                    }
-                )
-
-                compare_details.append(
-                    {
-                        "scheduler": scheduler,
-                        "allocator": allocator,
-                        "completed_requests": compare_result.get("completed_requests", []),
-                    }
-                )
-
-                staff_load_values = list(compare_result.get("staff_load", {}).values())
-                staff_load_std = float(pd.Series(staff_load_values).std(ddof=0)) if staff_load_values else 0.0
-                staff_load_mean = float(pd.Series(staff_load_values).mean()) if staff_load_values else 0.0
-                staff_load_cv = round(staff_load_std / max(staff_load_mean, 1.0), 4) if staff_load_mean else 0.0
-
-                compare_rows.append(
-                    {
-                        "scheduler": scheduler,
-                        "allocator": allocator,
-                        "total_processed": compare_result.get("total_processed", 0),
-                        "avg_waiting_time_hours": compare_result.get("avg_waiting_time_hours", 0.0),
-                        "avg_turnaround_days": compare_result.get("avg_turnaround_days", 0.0),
-                        "total_days_elapsed": compare_result.get("total_days_elapsed", 0.0),
-                        "throughput_req_per_day": compare_result.get("throughput_req_per_day", 0.0),
-                        "staff_load_std": round(staff_load_std, 2),
-                        "staff_load_cv": round(staff_load_cv, 4),
-                    }
-                )
-
+        base_payload = build_api_payload()
+        
+        with st.spinner("Running comparison simulations on backend..."):
+            for scheduler in compare_schedulers:
+                for allocator in compare_allocators:
+                    payload = base_payload.copy()
+                    payload["scheduler_type"] = scheduler
+                    payload["allocator_type"] = allocator
+                    payload["random_seed"] = same_seed
+                    
+                    try:
+                        response = requests.post(f"{BACKEND_URL}/simulate", json=payload, timeout=120)
+                        if response.status_code == 200:
+                            data = response.json()
+                            compare_result = data.get("results", {})
+                            
+                            compare_details.append(
+                                {
+                                    "scheduler": scheduler,
+                                    "allocator": allocator,
+                                    "completed_requests": compare_result.get("completed_requests", []),
+                                }
+                            )
+                            staff_load_values = list(compare_result.get("staff_load", {}).values())
+                            staff_load_std = float(pd.Series(staff_load_values).std(ddof=0)) if staff_load_values else 0.0
+                            staff_load_mean = float(pd.Series(staff_load_values).mean()) if staff_load_values else 0.0
+                            staff_load_cv = round(staff_load_std / max(staff_load_mean, 1.0), 4) if staff_load_mean else 0.0
+                            compare_rows.append(
+                                {
+                                    "scheduler": scheduler,
+                                    "allocator": allocator,
+                                    "total_processed": compare_result.get("total_processed", 0),
+                                    "avg_waiting_time_hours": compare_result.get("avg_waiting_time_hours", 0.0),
+                                    "avg_turnaround_days": compare_result.get("avg_turnaround_days", 0.0),
+                                    "total_days_elapsed": compare_result.get("total_days_elapsed", 0.0),
+                                    "throughput_req_per_day": compare_result.get("throughput_req_per_day", 0.0),
+                                    "staff_load_std": round(staff_load_std, 2),
+                                    "staff_load_cv": round(staff_load_cv, 4),
+                                }
+                            )
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"Failed to run {scheduler} + {allocator}: {e}")
+        
         compare_df = pd.DataFrame(compare_rows)
-
         baseline = compare_df[
             (compare_df["scheduler"] == "FCFS")
             & (compare_df["allocator"] == "college_based")
         ]
-
         if baseline.empty:
             baseline_row = compare_df.iloc[0]
         else:
             baseline_row = baseline.iloc[0]
-
         compare_df["delta_wait_vs_baseline"] = (
             compare_df["avg_waiting_time_hours"] - baseline_row["avg_waiting_time_hours"]
         ).round(2)
@@ -2296,9 +2373,9 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
         compare_df["delta_turnaround_vs_baseline"] = (
             compare_df["avg_turnaround_days"] - baseline_row["avg_turnaround_days"]
         ).round(2)
-
         st.session_state.comparison_df = compare_df
         st.session_state.comparison_details = compare_details
+
 
 if st.session_state.comparison_df is not None:
     # Prepare display dataframe from the stored comparison results

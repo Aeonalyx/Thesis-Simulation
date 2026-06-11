@@ -8,9 +8,12 @@ from flask_cors import CORS
 try:
     # Works when run from workspace root as a package
     from backend1.scheduler_engine1 import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
+    from backend1.roc_utils import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
 except ImportError:
     # Works when run directly from backend1/ as a script
     from scheduler_engine1 import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
+    from roc_utils import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
+
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend access
@@ -26,6 +29,11 @@ def to_json_serializable(obj):
         return obj.isoformat()
     return str(obj)
 
+def get_staff_info(engine):
+    return [{
+        "staff_id": s.staff_id, "name": s.name, 
+        "college_affiliation": s.college_affiliation, "quota_limit": s.quota_limit
+    } for s in engine.staff_pool]
 
 # ============================================================================
 # API ENDPOINTS
@@ -47,7 +55,9 @@ def get_config():
         "college_population": COLLEGE_POPULATION,
         "allocator_types": ["college_based", "workload_based", "pooled", "quota_free"],
         "scheduler_types": ["FCFS", "WEIGHTED"],
-        "scenarios": ["baseline", "staff_absence", "peak_urgency", "workload_imbalance"]
+        "scenarios": ["baseline", "staff_absence", "peak_urgency", "workload_imbalance","peak_period"],
+        "priority_weights_base": PRIORITY_ROC_WEIGHTS_BASE,
+        "priority_weights_full": PRIORITY_ROC_WEIGHTS_FULL
     })
 
 
@@ -99,6 +109,7 @@ def run_simulation():
         work_start = data.get('work_start', '08:00')
         work_end = data.get('work_end', '17:00')
         priority_weights = data.get('priority_weights')
+        urgency = data.get('urgency', False)
         
         # Validate inputs
         if scheduler_type not in ['FCFS', 'WEIGHTED']:
@@ -107,7 +118,7 @@ def run_simulation():
         if allocator_type not in ['college_based', 'workload_based', 'pooled', 'quota_free']:
             return jsonify({"error": f"Invalid allocator_type: {allocator_type}"}), 400
         
-        if scenario not in ['baseline', 'staff_absence', 'peak_urgency', 'workload_imbalance']:
+        if scenario not in ['baseline', 'staff_absence', 'peak_urgency', 'workload_imbalance','peak_period']:
             return jsonify({"error": f"Invalid scenario: {scenario}"}), 400
         
         # Create and run simulation
@@ -122,6 +133,7 @@ def run_simulation():
             random_seed=random_seed,
             work_start=work_start,
             work_end=work_end,
+            urgency=urgency,
         )
 
         results = engine.run(custom_config={
@@ -131,6 +143,8 @@ def run_simulation():
             "imbalance_factor": imbalance_factor,
             "num_absent_staff": num_absent_staff,
         })
+
+        staff_info = get_staff_info(engine)
         
         # Return results with additional metadata
         return jsonify({
@@ -149,7 +163,7 @@ def run_simulation():
                 "work_start": work_start,
                 "work_end": work_end,
             },
-            "results": results,
+            "results": {**results, "staff_info": staff_info},
             "completed_requests": len(engine.completed),
             "staff_load": results['staff_load']
         }), 200
@@ -184,10 +198,12 @@ def run_quick_simulation():
             "scenario": 'baseline',
             "total_requests": total_requests,
         })
+
+        staff_info = get_staff_info(engine)
         
         return jsonify({
             "success": True,
-            "results": results,
+            "results": {**results, "staff_info": staff_info},
             "staff_load": results['staff_load']
         }), 200
         
@@ -224,6 +240,7 @@ def compare_allocators():
         work_start = data.get('work_start', '08:00')
         work_end = data.get('work_end', '17:00')
         priority_weights = data.get('priority_weights')
+        urgency = data.get('urgency', False)
         
         allocators = ['college_based', 'workload_based', 'pooled', 'quota_free']
         results = {}
@@ -237,6 +254,7 @@ def compare_allocators():
                 random_seed=random_seed,
                 work_start=work_start,
                 work_end=work_end,
+                urgency=urgency,
             )
 
             sim_results = engine.run(custom_config={
@@ -246,8 +264,9 @@ def compare_allocators():
                 "imbalance_factor": imbalance_factor,
                 "num_absent_staff": num_absent_staff,
             })
+            staff_info = get_staff_info(engine)
             results[allocator] = {
-                "metrics": sim_results,
+                "metrics": {**sim_results, "staff_info": staff_info},
                 "staff_load": sim_results['staff_load']
             }
         
