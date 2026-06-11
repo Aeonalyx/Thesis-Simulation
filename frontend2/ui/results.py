@@ -41,8 +41,7 @@ normalized_weights_from_ui,
 def render_results(ctx, snapshot):
     engine = ctx.engine
     results = ctx.results
-    is_weighted_scheduler = ctx.is_weighted
-
+    
     if not engine or not results:
         st.info("Use the sidebar controls, then click Run to start the simulation.")
         st.stop()

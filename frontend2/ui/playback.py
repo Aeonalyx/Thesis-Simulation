@@ -32,7 +32,6 @@ def render_playback(ctx):
 
     engine = ctx.engine
     results = ctx.results
-    session = ctx.session
     staff_college_map = ctx.staff_map
     is_weighted_scheduler = ctx.is_weighted
 

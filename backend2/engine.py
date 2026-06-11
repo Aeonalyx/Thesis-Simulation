@@ -189,9 +189,9 @@ class SimulationEngine:
         self.absent_staff_ids: List[str] = []
         
 
-    # ---------------------------------------------------------------------
-    # Time helpers
-    # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Time helpers
+# ---------------------------------------------------------------------
 
     def _parse_clock_minutes(self, raw_value: str, fallback_minutes: int) -> int:
         if not isinstance(raw_value, str) or ":" not in raw_value:
@@ -254,9 +254,9 @@ class SimulationEngine:
 
         return current
 
-    # ---------------------------------------------------------------------
-    # Core setup helpers
-    # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Core setup helpers
+# ---------------------------------------------------------------------
 
     def _normalize_weights(self, weights: Dict[str, float]) -> Dict[str, float]:
         # Work on a copy so caller dict isn't mutated
@@ -523,9 +523,9 @@ class SimulationEngine:
 
         return requests
 
-    # ---------------------------------------------------------------------
-    # Allocation helpers
-    # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Allocation helpers
+# ---------------------------------------------------------------------
 
     def _active_staff(self) -> List[StaffMember]:
         return [staff for staff in self.staff_pool if staff.is_available]
@@ -713,9 +713,9 @@ class SimulationEngine:
         slot, staff = chosen
         return staff, slot, "next_available_day"
 
-    # ---------------------------------------------------------------------
-    # Event logging helpers
-    # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Event logging helpers
+# ---------------------------------------------------------------------
 
     def _log_event(
         self,
@@ -767,9 +767,9 @@ class SimulationEngine:
         result["time"] = result["time"].isoformat()
         return result
 
-    # ---------------------------------------------------------------------
-    # Assignment + processing helpers
-    # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Assignment + processing helpers
+# ---------------------------------------------------------------------
 
     def _processing_duration(self, request: DocumentRequest) -> Tuple[timedelta, bool]:
         base_duration, use_work_hours = _duration_to_schedule(
@@ -829,9 +829,9 @@ class SimulationEngine:
             details="request_completed",
         )
 
-    # ---------------------------------------------------------------------
-    # Scheduler execution
-    # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Scheduler execution
+# ---------------------------------------------------------------------
 
     def _run_fcfs(self, requests: List[DocumentRequest]):
         arrivals = sorted(requests, key=lambda r: r.submission_time)
@@ -1033,9 +1033,9 @@ class SimulationEngine:
             current_time = min(candidate_times)
             current_time = self._next_working_start(current_time)
 
-    # ---------------------------------------------------------------------
-    # Metrics and public run API
-    # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Metrics and public run API
+# ---------------------------------------------------------------------
 
     def _calculate_metrics(self) -> Dict:
         if not self.completed:
