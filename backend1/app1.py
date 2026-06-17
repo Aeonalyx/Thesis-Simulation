@@ -19,6 +19,7 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend access
 
 
+
 # ============================================================================
 # HELPER: Convert responses to JSON-serializable format
 # ============================================================================
@@ -28,6 +29,8 @@ def to_json_serializable(obj):
     if hasattr(obj, 'isoformat'):
         return obj.isoformat()
     return str(obj)
+
+app.json.default = to_json_serializable 
 
 def get_staff_info(engine):
     return [{

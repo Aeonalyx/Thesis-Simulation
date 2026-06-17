@@ -15,6 +15,7 @@ import sys
 import time as tm
 from datetime import datetime, time
 from typing import Any, Dict, List, Optional
+import copy
 
 import pandas as pd
 import plotly.express as px
@@ -112,7 +113,7 @@ class RequestRecord(DocumentRequest):
             college=str(data.get("college", "")),
             document_type=str(data.get("document_type", "")),
             urgency=int(data.get("urgency", 5)),
-            requester_type=str(data.get("requester_status", "")),
+            requester_type=str(data.get("requester_type", "")),
             submission_time=self._parse_time(data.get("submission_time")) or datetime.now(),
             completeness_of_requirements=float(data.get("completeness_of_requirements", 1.0)),
             payment_status=str(data.get("payment_status", "Paid")),
@@ -566,6 +567,14 @@ def collect_ui_config() -> Dict:
 def apply_ui_config(config: Dict):
     if not isinstance(config, dict):
         return
+    
+    raw = config.get("weights_raw", {})
+    old_keys = {"urgency", "requester_type", "waiting_time"}
+    if raw and old_keys.intersection(raw.keys()):
+        st.warning(
+            "This preset was saved with old weight key names and will use default weights. "
+            "Re-save it after running a simulation to update it."
+        )
 
     st.session_state.scheduler_type = config.get("scheduler_type", st.session_state.scheduler_type)
     st.session_state.allocator_type = config.get("allocator_type", st.session_state.allocator_type)
@@ -655,7 +664,7 @@ def build_api_payload() -> Dict:
 
 def run_simulation_now():
     payload = build_api_payload()
-    with st.spinner("Running simulation on backend..."):
+    with st.spinner():
         try:
             response = requests.post(f"{BACKEND_URL}/simulate", json=payload, timeout=120)
             if response.status_code == 200:
@@ -679,8 +688,26 @@ def run_simulation_now():
                 mock_engine.priority_weights = results.get("priority_weights", {})
                 mock_engine.workday_minutes = 9 * 60
                 mock_engine.urgency = payload.get("urgency", False)
-                mock_engine.start_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-                
+
+                work_hours = results.get("work_hours", {})
+                try:
+                    ws = datetime.strptime(work_hours.get("start", "08:00"), "%H:%M")
+                    we = datetime.strptime(work_hours.get("end", "17:00"), "%H:%M")
+                    mock_engine.workday_minutes = int((we - ws).total_seconds() / 60)
+                except Exception:
+                    mock_engine.workday_minutes = 9 * 60
+                try:
+                    start_str = work_hours.get("start", "08:00")
+                    start_time_obj = datetime.strptime(start_str, "%H:%M").time()
+                    mock_engine.start_time = datetime.now().replace(
+                        hour=start_time_obj.hour,
+                        minute=start_time_obj.minute,
+                        second=0,
+                        microsecond=0,
+                    )
+                except Exception:
+                    mock_engine.start_time = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)
+                    
                 st.session_state.simulation_engine = mock_engine
                 st.session_state.simulation_results = results
                 st.session_state.last_run_config = {"engine_kwargs": payload, "run_config": payload}
@@ -804,12 +831,12 @@ def render_theme_table(df: pd.DataFrame, height_px: int = 320):
 
 def run_variant_for_figure(scheduler_type: str, allocator_type: str) -> Optional[Dict]:
     last_run = st.session_state.get("last_run_config")
-    if not last_run:
+    if not last_run or "engine_kwargs" not in last_run:
         return None
-    payload = dict(last_run.get("engine_kwargs", {}))
+    
+    payload = build_api_payload()
     payload["scheduler_type"] = scheduler_type
     payload["allocator_type"] = allocator_type
-    payload["random_seed"] = int(st.session_state.simulation_results.get("seed_used", st.session_state.manual_seed))
     
     try:
         response = requests.post(f"{BACKEND_URL}/simulate", json=payload, timeout=120)
@@ -2336,9 +2363,16 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
                                 }
                             )
                             staff_load_values = list(compare_result.get("staff_load", {}).values())
-                            staff_load_std = float(pd.Series(staff_load_values).std(ddof=0)) if staff_load_values else 0.0
-                            staff_load_mean = float(pd.Series(staff_load_values).mean()) if staff_load_values else 0.0
-                            staff_load_cv = round(staff_load_std / max(staff_load_mean, 1.0), 4) if staff_load_mean else 0.0
+                            if not staff_load_values:
+                                staff_load_std = 0.0
+                                staff_load_mean = 0.0
+                                staff_load_cv = 0.0
+                            else:
+                                s = pd.Series(staff_load_values)
+                                staff_load_std = float(s.std(ddof=0))
+                                staff_load_mean = float(s.mean())
+                                staff_load_cv = round(staff_load_std / staff_load_mean, 4) if staff_load_mean > 0 else 0.0
+                            
                             compare_rows.append(
                                 {
                                     "scheduler": scheduler,
@@ -2714,7 +2748,7 @@ if engine.completed:
                 "submission_time": req.submission_time.isoformat(),
                 "assignment_time": req.assignment_time.isoformat() if req.assignment_time else None,
                 "completion_time": req.completion_time.isoformat() if req.completion_time else None,
-                "queue_wait_hours": round(req.get_waiting_time_minutes() / 60.0, 4),
+                "queue_wait_hours": round(req.get_waiting_time_minutes() or 0.0 / 60.0, 4),
                 "turnaround_days": round(req.get_turnaround_time_minutes() / 1440.0, 4),
                 "assigned_staff": req.assigned_staff,
             }
@@ -2750,4 +2784,3 @@ if st.session_state.last_run_config:
         mime="application/json",
         use_container_width=True,
     )
-

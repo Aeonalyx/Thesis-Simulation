@@ -276,9 +276,9 @@ class DocumentRequest:
         self.completeness_of_requirements = float(COMPLETENESS_LEVELS.get(stage, 1.0))
         self.payment_status = self._payment_status_at(current_time)
 
-    def get_waiting_time_minutes(self) -> float:
+    def get_waiting_time_minutes(self) -> Optional[float]:
         if self.assignment_time is None:
-            return 0.0
+            return None
         return (self.assignment_time - self.submission_time).total_seconds() / 60.0
 
     def get_turnaround_time_minutes(self) -> float:
@@ -293,7 +293,6 @@ class DocumentRequest:
             "document_type": self.document_type,
             "urgency": self.urgency,
             "requester_type": self.requester_type,
-            "requester_status": self.requester_type,
             "completeness_of_requirements": round(float(self.completeness_of_requirements), 4),
             "requirements_stage": self.requirements_stage,
             "payment_status": self.payment_status,
@@ -570,8 +569,7 @@ class SimulationEngine:
             "Karla",
         ]
 
-        max_staff = max(len(COLLEGES) * 2, 1)
-        count = max(1, min(int(num_staff), max_staff))
+        count = max(1, int(num_staff))
         quota = max(1, int(quota_limit))
 
         pool = []
@@ -1028,7 +1026,7 @@ class SimulationEngine:
             DOCUMENT_COMPLEXITY.get(request.document_type, 1)
         )
         if use_work_hours:
-            per_request_rng = random.Random(f"{self.random_seed}:{request.request_id}:proc")
+            per_request_rng = random.Random(hash((self.random_seed, request.request_id)))
             multiplier = per_request_rng.uniform(0.8, 1.2)
         else:
             multiplier = 1.0
@@ -1057,7 +1055,10 @@ class SimulationEngine:
         staff.increment_day_quota(assignment_time.date())
 
         # Assignment availability is not completion-blocked in current intake model.
-        staff.next_available_time = assignment_time
+        if self.allocator_type == "quota_free":
+            staff.next_available_time = completion_time
+        else:
+            staff.next_available_time = assignment_time
 
         self.completed.append(request)
 
@@ -1301,7 +1302,12 @@ class SimulationEngine:
                 "scenario": self.scenario,
             }
 
-        waiting_hours = [req.get_waiting_time_minutes() / 60.0 for req in self.completed]
+        waiting_hours = [
+            w / 60.0
+            for req in self.completed
+            if (w := req.get_waiting_time_minutes()) is not None
+        ]
+
         turnaround_days = [req.get_turnaround_time_minutes() / 1440.0 for req in self.completed]
 
         first_submission = min(req.submission_time for req in self.completed)
@@ -1329,7 +1335,7 @@ class SimulationEngine:
         config = self._build_run_config(custom_config)
         self.scenario = config["scenario"]
 
-        self.start_time = self._default_day_start(datetime.now())
+        self.start_time = self._day_start(datetime.now().date())
         self._reset_for_run()
         self._apply_staff_absence(config["num_absent_staff"])
 

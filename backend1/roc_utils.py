@@ -51,22 +51,6 @@ requester_status_weight = PRIORITY_ROC_WEIGHTS["requester_status"]
 college_affiliation_weight = PRIORITY_ROC_WEIGHTS["college_affiliation"]
 payment_status_weight = PRIORITY_ROC_WEIGHTS["payment_status"]
 
-
-# Debug / verification utility
-def print_priority_roc_weights():
-    """Print the default (base) ROC weights and explain urgency behavior.
-
-    By default the module exposes the 6-criteria ROC weights. If you want
-    to see the weights including `urgency` (7 criteria), call
-    `print_priority_roc_weights(include_urgency=True)`.
-    """
-    print("ROC Weights (base 6 criteria):")
-    for k, v in PRIORITY_ROC_WEIGHTS_BASE.items():
-        print(f"  {k}: {v:.4f}")
-    print("")
-    print("Note: urgency is optional. To see 7-criteria weights call with include_urgency=True.")
-
-
 def print_priority_roc_weights(include_urgency: bool = False):
     if not include_urgency:
         print("ROC Weights (base 6 criteria):")
