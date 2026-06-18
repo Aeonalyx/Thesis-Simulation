@@ -1542,9 +1542,6 @@ else:
         for assign_item in frame_data["assignments"]:
             if assign_item.get("Request"):
                 routed_request_ids.add(assign_item["Request"])
-        for waiting_item in frame_data["waiting"]:
-            if waiting_item.get("Request"):
-                routed_request_ids.add(waiting_item["Request"])
 
         pending_queue_rows = []
         for request_id, request_meta in request_lookup.items():
@@ -1579,7 +1576,7 @@ else:
         card2.metric("Current Request Step", f"{st.session_state.playback_frame + 1}/{max_step + 1}")
         card3.metric("Processed Decisions", frame_data["processed_count"])
         card4.metric("Assigned So Far", frame_data["assigned_count"])
-        card5.metric("Queue Size Now", len(pending_queue_rows) + frame_data["waiting_count"])
+        card5.metric("Queue Size Now", len(pending_queue_rows))
 
         routing_event_label = str(current_event.get("event_type", "")).replace("_", " ").title()
         routing_detail_label = str(current_event.get("details", "")).replace("_", " ").title()
