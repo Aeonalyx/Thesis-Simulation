@@ -1103,16 +1103,14 @@ class SimulationEngine:
             while index < len(arrivals) and arrivals[index].submission_time <= current_time:
                 req = arrivals[index]
                 self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_arrived")
-                if self._is_request_ready(req, current_time):
-                    pending.append(req)
-                else:
-                    not_ready.append(req)
-                    self._log_event(
-                        req.submission_time,
-                        "WAITING",
-                        request=req,
-                        details="pending_requirements_or_payment",
-                    )
+                
+                not_ready.append(req)
+                self._log_event(
+                    req.submission_time,
+                    "WAITING",
+                    request=req,
+                    details="pending_requirements_or_payment",
+                )
                 index += 1
 
             ready_now = [req for req in not_ready if self._is_request_ready(req, current_time)]
@@ -1174,17 +1172,14 @@ class SimulationEngine:
             while index < len(arrivals) and arrivals[index].submission_time <= current_time:
                 req = arrivals[index]
                 self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_arrived")
-                if self._is_request_ready(req, current_time):
-                    pending.append(req)
-                    self.scheduler.add_request(req)
-                else:
-                    not_ready.append(req)
-                    self._log_event(
-                        req.submission_time,
-                        "WAITING",
-                        request=req,
-                        details="pending_requirements_or_payment",
-                    )
+                
+                not_ready.append(req)
+                self._log_event(
+                    req.submission_time,
+                    "WAITING",
+                    request=req,
+                    details="pending_requirements_or_payment",
+                )
                 index += 1
 
             ready_now = [req for req in not_ready if self._is_request_ready(req, current_time)]
