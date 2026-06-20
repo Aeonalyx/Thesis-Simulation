@@ -63,6 +63,96 @@ with st.sidebar:
     )
     
     duration = st.slider("Duration (minutes)", 30, 180, 60, 30)
+
+
+    # 👇 NEW: Load auto-generated requests into queue
+    if st.button("📥 Load Scenario Queue", type="secondary", use_container_width=True):
+        with st.spinner("Generating auto-requests based on config..."):
+            try:
+                res = requests.post(
+                    "http://localhost:5000/api/queue/load-scenario",
+                    json={
+                        "scheduler": scheduling_method,
+                        "allocator": allocation_method,
+                        "scenario": scenario,
+                        "duration_minutes": duration
+                    },
+                    timeout=15
+                )
+                if res.status_code == 200:
+                    count = res.json()['count']
+                    st.success(f"✅ Loaded {count} auto-generated requests!")
+                    st.session_state.show_queue = True
+                    st.rerun()
+                else:
+                    st.error("Failed to load queue")
+            except Exception as e:
+                st.error(f"Connection error: {e}")
+
+    st.divider()
+    st.subheader("📝 Manual Request Entry")
+    with st.form("manual_request_form"):
+        manual_college = st.selectbox("College", ['COE', 'CAS', 'CBA', 'CEGE', 'CS', 'IE'])
+        manual_doc = st.selectbox("Document Type", [
+            'Transcript of Records', 'Certificate of Enrollment', 
+            'Honorable Dismissal', 'Certification'
+        ])
+        manual_urgency = st.slider("Urgency (1-10)", 1, 10, 5)
+        manual_req_type = st.selectbox("Requester Type", [
+            'Graduating Student', 'Enrolling Student', 
+            'Faculty', 'Alumni', 'Regular Student'
+        ])
+        submit_manual = st.form_submit_button("➕ Add to Queue", type="secondary")
+        
+        if submit_manual:
+            try:
+                res = requests.post(
+                    "http://localhost:5000/api/queue/add",
+                    json={
+                        "college": manual_college,
+                        "document_type": manual_doc,
+                        "urgency": manual_urgency,
+                        "requester_type": manual_req_type,
+                        "scheduler": scheduling_method
+                    },
+                    timeout=10
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    st.success(f"✅ Added! Position: #{data['position']}")
+                    st.session_state.show_queue = True
+                else:
+                    st.error("Failed to add request")
+            except Exception as e:
+                st.error(f"Connection error: {e}")
+
+    
+
+    with st.expander("🛠️ Advanced Settings", expanded=False):
+        enable_custom_staff = st.checkbox("Customize Staff Count", value=False)
+        if enable_custom_staff:
+            num_staff = st.slider("Number of Staff", min_value=1, max_value=20, value=6, step=1)
+            advanced_settings = {
+                "enable_custom_staff": True,
+                "num_staff": num_staff
+            }
+        else:
+            advanced_settings = {"enable_custom_staff": False}
+
+    queue_source = "🔄 Generating fresh auto-requests"
+    use_queue_flag = False
+    try:
+        q_res = requests.get("http://localhost:5000/api/queue/status", timeout=5)
+        if q_res.status_code == 200:
+            q_count = q_res.json()['total_in_queue']
+            if q_count > 0:
+                use_queue_flag = True
+                queue_source = f"✅ Using {q_count} requests from Active Queue"
+    except:
+        pass
+
+    st.info(queue_source, icon="ℹ️")
+
     
     if st.button("Run Simulation", type="primary", use_container_width=True):
         with st.spinner("Running REAL simulation with your algorithms..."):
@@ -72,8 +162,10 @@ with st.sidebar:
                     json={
                         "scheduler": scheduling_method,
                         "allocator": allocation_method,
-                        "scenario": scenario,
-                        "duration_minutes": duration
+                        "scenario": scenario,   
+                        "duration_minutes": duration,
+                        "use_active_queue": use_queue_flag, 
+                        "advanced_settings": advanced_settings
                     },
                     timeout=30
                 )
@@ -84,7 +176,8 @@ with st.sidebar:
                     st.session_state.last_config = {
                         "scheduler": scheduling_method,
                         "allocator": allocation_method,
-                        "scenario": scenario
+                        "scenario": scenario,
+                        "advanced_settings": advanced_settings
                     }
                     st.success("Simulation completed with REAL algorithm data!")
                 else:
@@ -100,9 +193,8 @@ if 'simulation_data' not in st.session_state:
     st.info("Configure parameters in sidebar and click **Run Simulation** to see REAL metrics from your algorithms")
     
     # Show what real data looks like
-    st.markdown("### Expected Output from Your Algorithms")
+    st.markdown("### Expected Output:")
     st.markdown("""
-    When simulation runs, you'll see **actual metrics computed by your scheduling logic**:
     - **Avg Waiting Time**: Calculated from `(completion_time - submission_time)` for all requests
     - **Avg Turnaround**: Total processing time including queue wait
     - **Throughput**: `total_processed / simulation_duration_hours`
@@ -182,6 +274,43 @@ else:
     - **Duration**: `{duration} minutes`
     - **Run Time**: `{st.session_state.last_run}`
     """)
+
+    # Queue Viewer Toggle
+    st.toggle("👁️ Show Live Queue", key="show_queue", value=st.session_state.get('show_queue', False))
+    
+    if st.session_state.get('show_queue', False):
+        try:
+            queue_res = requests.get("http://localhost:5000/api/queue/status", timeout=10)
+            if queue_res.status_code == 200:
+                q_data = queue_res.json()
+                if q_data['total_in_queue'] > 0:
+                    df = pd.DataFrame(q_data['queue'])
+                    
+                    # Highlight manual row
+                    def highlight_manual(row):
+                        if row['Is Manual']:
+                            return ['background-color: #fff3cd; font-weight: bold; border-left: 3px solid #ffc107;'] * len(row)
+                        return [''] * len(row)
+                        
+                    st.dataframe(
+                        df.style.apply(highlight_manual, axis=1),
+                        hide_index=True,
+                        use_container_width=True,
+                        height=400
+                    )
+                    
+                    col_a, col_b = st.columns([1, 3])
+                    with col_a:
+                        if st.button("🗑️ Clear Queue", use_container_width=True):
+                            requests.post("http://localhost:5000/api/queue/clear", timeout=10)
+                            st.session_state.show_queue = False
+                            st.rerun()
+                    with col_b:
+                        st.caption(f"Scheduler: {q_data['scheduler']} | Total: {q_data['total_in_queue']}")
+                else:
+                    st.info("Queue is empty. Add a manual request to see it here.")
+        except Exception as e:
+            st.error(f"Failed to fetch queue: {e}")
 
 # Footer
 st.markdown("---")
