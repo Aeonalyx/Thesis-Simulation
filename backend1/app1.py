@@ -113,6 +113,7 @@ def run_simulation():
         work_end = data.get('work_end', '17:00')
         priority_weights = data.get('priority_weights')
         urgency = data.get('urgency', False)
+        custom_requests = data.get('custom_requests', [])
         
         # Validate inputs
         if scheduler_type not in ['FCFS', 'WEIGHTED']:
@@ -145,6 +146,7 @@ def run_simulation():
             "urgency_base": urgency_base,
             "imbalance_factor": imbalance_factor,
             "num_absent_staff": num_absent_staff,
+            "custom_requests": custom_requests
         })
 
         staff_info = get_staff_info(engine)

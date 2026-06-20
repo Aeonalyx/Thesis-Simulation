@@ -658,7 +658,8 @@ def build_api_payload() -> Dict:
         "work_end": st.session_state.work_end_time.strftime("%H:%M"),
         "priority_weights": weights,
         "scenario": scenario,
-        "urgency": bool(st.session_state.urgency)
+        "urgency": bool(st.session_state.urgency),
+        "custom_requests": st.session_state.get("custom_requests", [])
     }
 
 
@@ -1218,6 +1219,50 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
 initialize_state()
 
 
+
+# ============================================================================
+# CUSTOM REQUESTS UI
+# ============================================================================
+if "custom_requests" not in st.session_state:
+    st.session_state.custom_requests = []
+
+with st.sidebar.expander("📝 Custom Requests (Optional)", expanded=False):
+    st.caption("Add specific requests to include in the simulation before it starts.")
+    with st.form("custom_req_form", clear_on_submit=True):
+        c_college = st.selectbox("College", COLLEGES, key="c_college")
+        c_doc = st.selectbox("Document Type", list(DOCUMENT_COMPLEXITY.keys()), key="c_doc")
+        c_req_type = st.selectbox("Requester Type", list(REQUESTER_PRIORITY.keys()), key="c_req_type")
+        c_urgency = st.slider("Urgency", 1, 10, 5, key="c_urgency")
+        c_time = st.time_input("Submission Time", value=time(8, 30), key="c_time")
+        c_comp = st.selectbox("Completeness", ["complete", "partial", "incomplete"], key="c_comp")
+        c_pay = st.selectbox("Payment Status", ["Paid", "Unpaid"], key="c_pay")
+        
+        submitted = st.form_submit_button("Add Request", use_container_width=True)
+        if submitted:
+            new_req = {
+                "college": c_college,
+                "document_type": c_doc,
+                "requester_type": c_req_type,
+                "urgency": c_urgency,
+                "submission_time": c_time.strftime("%H:%M"),
+                "completeness": c_comp,
+                "payment_status": c_pay
+            }
+            st.session_state.custom_requests.append(new_req)
+            st.rerun()
+            
+    if st.session_state.custom_requests:
+        st.markdown("---")
+        st.write(f"**Added Requests ({len(st.session_state.custom_requests)}):**")
+        for i, req in enumerate(st.session_state.custom_requests):
+            col1, col2 = st.columns([4, 1])
+            col1.write(f"{i+1}. **{req['document_type']}** ({req['college']}) at {req['submission_time']}")
+            if col2.button("❌", key=f"del_req_{i}"):
+                st.session_state.custom_requests.pop(i)
+                st.rerun()
+    else:
+        st.info("No custom requests added.")
+
 # ============================================================================
 # SIDEBAR CONTROLS
 # ============================================================================
@@ -1724,7 +1769,7 @@ st.header("Key Metrics")
 k1, k2, k3, k4, k5 = st.columns(5)
 with k1:
     processed = int(results.get("total_processed", 0))
-    expected = int(st.session_state.total_requests)
+    expected = int(st.session_state.total_requests) + len(st.session_state.get("custom_requests", []))
     pct = (processed / expected * 100.0) if expected > 0 else 0.0
     st.metric("Total Processed", f"{processed}/{expected}", f"{pct:.0f}%")
 with k2:
@@ -2745,7 +2790,7 @@ if engine.completed:
                 "submission_time": req.submission_time.isoformat(),
                 "assignment_time": req.assignment_time.isoformat() if req.assignment_time else None,
                 "completion_time": req.completion_time.isoformat() if req.completion_time else None,
-                "queue_wait_hours": round(req.get_waiting_time_minutes() or 0.0 / 60.0, 4),
+                "queue_wait_hours": round((req.get_waiting_time_minutes() or 0.0) / 60.0, 4),
                 "turnaround_days": round(req.get_turnaround_time_minutes() / 1440.0, 4),
                 "assigned_staff": req.assigned_staff,
             }

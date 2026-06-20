@@ -772,6 +772,98 @@ class SimulationEngine:
         _add_batch(evening_count, bucket_2_end, effective_end_hour)
 
         return requests
+    
+    def _build_custom_request(self, data: dict, index: int) -> DocumentRequest:
+        """Parse a custom request dictionary into a DocumentRequest object."""
+        req_id = str(data.get("request_id", f"CUSTOM_{index+1:03d}"))
+        college = str(data.get("college", COLLEGES[0]))
+        if college not in COLLEGE_POPULATION:
+            college = COLLEGES[0]
+            
+        doc_type = str(data.get("document_type", list(DOCUMENT_COMPLEXITY.keys())[0]))
+        if doc_type not in DOCUMENT_COMPLEXITY:
+            doc_type = list(DOCUMENT_COMPLEXITY.keys())[0]
+            
+        requester_type = str(data.get("requester_type", "Regular Student"))
+        # Enforce document restrictions
+        allowed_requesters = DOCUMENT_REQUESTER_RESTRICTIONS.get(doc_type)
+        if allowed_requesters and requester_type not in allowed_requesters:
+            requester_type = allowed_requesters[0] 
+        elif requester_type not in REQUESTER_PRIORITY:
+            requester_type = "Regular Student"
+            
+        urgency = int(data.get("urgency", 5))
+        urgency = max(1, min(10, urgency))
+        
+        # Parse submission time (supports "HH:MM" or ISO format)
+        sub_time_str = str(data.get("submission_time", "08:00"))
+        try:
+            if "T" in sub_time_str or "-" in sub_time_str:
+                sub_time = datetime.fromisoformat(sub_time_str)
+            else:
+                parts = sub_time_str.split(":")
+                h, m = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+                sub_time = self.start_time.replace(hour=h, minute=m, second=0, microsecond=0)
+        except Exception:
+            sub_time = self.start_time.replace(hour=8, minute=0)
+            
+        # Parse completeness
+        comp_raw = data.get("completeness", "complete")
+        if isinstance(comp_raw, str):
+            comp_lower = comp_raw.lower()
+            if comp_lower in COMPLETENESS_LEVELS:
+                comp_val = COMPLETENESS_LEVELS[comp_lower]
+                stage = comp_lower
+            else:
+                try:
+                    comp_val = float(comp_raw)
+                    stage = "complete" if comp_val >= 1.0 else ("partial" if comp_val >= 0.7 else "incomplete")
+                except Exception:
+                    comp_val = 1.0
+                    stage = "complete"
+        else:
+            comp_val = float(comp_raw)
+            stage = "complete" if comp_val >= 1.0 else ("partial" if comp_val >= 0.7 else "incomplete")
+            
+        # Parse payment status
+        pay_status = str(data.get("payment_status", "Paid")).strip().lower()
+        is_paid = pay_status in {"paid", "settled", "complete", "cleared", "yes", "y", "true", "1"}
+        
+        # Calculate readiness timelines based on completeness and payment
+        if stage == "incomplete":
+            partial_time = sub_time + timedelta(hours=2)
+            complete_time = partial_time + timedelta(hours=4)
+        elif stage == "partial":
+            partial_time = sub_time
+            complete_time = sub_time + timedelta(hours=2)
+        else:
+            partial_time = sub_time
+            complete_time = sub_time
+            
+        if not is_paid:
+            payment_time = sub_time + timedelta(hours=24) # Assume unpaid pays later
+        else:
+            payment_time = sub_time
+            
+        ready_time = max(complete_time, payment_time)
+        
+        req = DocumentRequest(
+            request_id=req_id,
+            college=college,
+            document_type=doc_type,
+            urgency=urgency,
+            requester_type=requester_type,
+            submission_time=sub_time,
+            completeness_of_requirements=comp_val,
+            requirements_stage=stage,
+            requirements_partial_time=partial_time,
+            requirements_complete_time=complete_time,
+            payment_time=payment_time,
+            ready_time=ready_time,
+            payment_status="Paid" if is_paid else "Unpaid"
+        )
+        req.update_status(sub_time)
+        return req
 
     # ---------------------------------------------------------------------
     # Allocation helpers
@@ -907,7 +999,7 @@ class SimulationEngine:
                 earliest,
                 enforce_quota=False,
                 exact_time=exact_time,
-                ignore_staff_availability=True,
+                ignore_staff_availability=False,
             )
             chosen = self._select_from_options(options, mode="earliest")
             if not chosen:
@@ -1054,11 +1146,8 @@ class SimulationEngine:
         staff.total_assigned += 1
         staff.increment_day_quota(assignment_time.date())
 
-        # Assignment availability is not completion-blocked in current intake model.
-        if self.allocator_type == "quota_free":
-            staff.next_available_time = completion_time
-        else:
-            staff.next_available_time = assignment_time
+        # Staff become available after completing the current request
+        staff.next_available_time = completion_time
 
         self.completed.append(request)
 
@@ -1335,6 +1424,15 @@ class SimulationEngine:
         self._apply_staff_absence(config["num_absent_staff"])
 
         requests = self._generate_requests(config)
+        custom_requests_data = config.get("custom_requests", [])
+        if custom_requests_data:
+            for idx, req_data in enumerate(custom_requests_data):
+                try:
+                    custom_req = self._build_custom_request(req_data, idx)
+                    requests.append(custom_req)
+                except Exception as e:
+                    print(f"Error parsing custom request {idx}: {e}")
+
         self.generated_requests = requests
 
         if self.scheduler_type == "FCFS":
