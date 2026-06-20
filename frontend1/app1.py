@@ -14,12 +14,15 @@ import os
 import sys
 import time as tm
 from datetime import datetime, time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+import copy
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
+import requests
 
 
 # Add project root to path so frontend1 can import backend1 modules reliably.
@@ -29,9 +32,9 @@ from backend1.scheduler_engine1 import (  # noqa: E402
     COLLEGES,
     DOCUMENT_COMPLEXITY,
     PRIORITY_WEIGHTS,
+    _soft_cap,
     PRIORITY_ROC_WEIGHTS_FULL,
     COLLEGE_PRIORITY,
-    _soft_cap,
     COMPLETENESS_LEVELS,
     REQUESTER_PRIORITY,
     REQUESTER_PRIORITY_MAX,
@@ -39,6 +42,39 @@ from backend1.scheduler_engine1 import (  # noqa: E402
     SimulationEngine,
     _duration_to_schedule,
 )
+
+# ============================================================================
+# BACKEND API CONFIGURATION
+# ============================================================================
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:5000")
+
+DEFAULT_CONFIG = {
+    "colleges": ["COE", "CED", "CASS", "CSM", "CEBA", "CCS", "CHS"],
+    "document_types": list(DOCUMENT_COMPLEXITY.keys()),
+    "document_complexity": DOCUMENT_COMPLEXITY,
+    "college_population": {"COE": 0.2454, "CED": 0.1921, "CASS": 0.1908, "CSM": 0.1553, "CEBA": 0.0983, "CCS": 0.0787, "CHS": 0.0394},
+    "allocator_types": ["college_based", "workload_based", "pooled", "quota_free"],
+    "scheduler_types": ["FCFS", "WEIGHTED"],
+    "scenarios": ["baseline", "staff_absence", "peak_urgency", "workload_imbalance", "peak_period"],
+    "priority_weights_base": PRIORITY_WEIGHTS,
+    "priority_weights_full": PRIORITY_ROC_WEIGHTS_FULL
+}
+
+@st.cache_data(ttl=60)
+def fetch_backend_config():
+    try:
+        response = requests.get(f"{BACKEND_URL}/config", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except requests.exceptions.RequestException:
+        pass
+    return DEFAULT_CONFIG
+
+backend_config = fetch_backend_config()
+COLLEGES = backend_config.get("colleges", DEFAULT_CONFIG["colleges"])
+DOCUMENT_COMPLEXITY = backend_config.get("document_complexity", DEFAULT_CONFIG["document_complexity"])
+ALLOCATOR_OPTIONS = backend_config.get("allocator_types", DEFAULT_CONFIG["allocator_types"])
+SCHEDULER_OPTIONS = backend_config.get("scheduler_types", DEFAULT_CONFIG["scheduler_types"])
 
 
 CRITERIA_KEYS = list(PRIORITY_WEIGHTS.keys())
@@ -60,7 +96,6 @@ def format_criterion_label(key: str) -> str:
 def weight_state_key(key: str) -> str:
     return f"w_{key}"
 
-
 def active_criteria() -> List[str]:
     """Return the list of criteria to render in the UI based on urgency toggle."""
     keys = list(CRITERIA_KEYS)
@@ -68,6 +103,44 @@ def active_criteria() -> List[str]:
         keys = keys + ["urgency"]
     return keys
 
+# ============================================================================
+# DATA WRAPPERS (To parse API JSON back into frontend-compatible objects)
+# ============================================================================
+class RequestRecord(DocumentRequest):
+    def __init__(self, data: dict):
+        super().__init__(
+            request_id=str(data.get("request_id", "")),
+            college=str(data.get("college", "")),
+            document_type=str(data.get("document_type", "")),
+            urgency=int(data.get("urgency", 5)),
+            requester_type=str(data.get("requester_type", "")),
+            submission_time=self._parse_time(data.get("submission_time")) or datetime.now(),
+            completeness_of_requirements=float(data.get("completeness_of_requirements", 1.0)),
+            payment_status=str(data.get("payment_status", "Paid")),
+            requirements_stage=str(data.get("requirements_stage", "complete")),
+            requirements_partial_time=self._parse_time(data.get("requirements_partial_time")),
+            requirements_complete_time=self._parse_time(data.get("requirements_complete_time")),
+            payment_time=self._parse_time(data.get("payment_time")),
+            ready_time=self._parse_time(data.get("ready_time")),
+            priority_score=float(data.get("priority_score", 0.0)),
+            assignment_time=self._parse_time(data.get("assignment_time")),
+            completion_time=self._parse_time(data.get("completion_time")),
+            assigned_staff=str(data.get("assigned_staff")) if data.get("assigned_staff") else None,
+            is_custom=bool(data.get("is_custom", False)),
+        )
+
+    @staticmethod
+    def _parse_time(time_str):
+        if not time_str: return None
+        try: return datetime.fromisoformat(str(time_str))
+        except Exception: return None
+
+class StaffRecord:
+    def __init__(self, data: dict):
+        self.staff_id = str(data.get("staff_id", ""))
+        self.name = str(data.get("name", ""))
+        self.college_affiliation = str(data.get("college_affiliation", ""))
+        self.quota_limit = int(data.get("quota_limit", 20))
 
 # ============================================================================
 # PAGE CONFIG
@@ -341,216 +414,6 @@ def apply_dashboard_theme():
             background: rgba(255, 255, 255, 0.14);
             white-space: nowrap;
         }
-
-        .comparison-board {
-            display: grid;
-            gap: 0.9rem;
-            margin-top: 0.6rem;
-        }
-
-        .comparison-grid {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 0.9rem;
-        }
-
-        .comparison-card {
-            position: relative;
-            border-radius: 18px;
-            border: 1px solid rgba(148, 163, 184, 0.22);
-            background:
-                radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 38%),
-                linear-gradient(160deg, rgba(26, 20, 47, 0.96) 0%, rgba(18, 15, 35, 0.96) 100%);
-            box-shadow: 0 16px 34px rgba(5, 4, 12, 0.42);
-            padding: 0.95rem 1rem 1rem;
-            overflow: hidden;
-        }
-
-        .comparison-card::before {
-            content: "";
-            position: absolute;
-            inset: 0 0 auto 0;
-            height: 4px;
-            background: linear-gradient(90deg, #22d3ee 0%, #60a5fa 45%, #a855f7 100%);
-        }
-
-        .comparison-card h4 {
-            margin: 0;
-            font-size: 1rem;
-            font-weight: 800;
-            color: #f8f6ff;
-        }
-
-        .comparison-card .meta {
-            margin-top: 0.22rem;
-            color: #bcb3da;
-            font-size: 0.8rem;
-        }
-
-        .comparison-pill-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.38rem;
-            margin-top: 0.7rem;
-        }
-
-        .comparison-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-            border-radius: 999px;
-            padding: 0.34rem 0.62rem;
-            font-size: 0.72rem;
-            font-weight: 700;
-            border: 1px solid rgba(148, 163, 184, 0.22);
-            background: rgba(255, 255, 255, 0.04);
-            color: #efeafe;
-        }
-
-        .comparison-pill.good {
-            background: rgba(16, 185, 129, 0.15);
-            border-color: rgba(16, 185, 129, 0.32);
-            color: #a7f3d0;
-        }
-
-        .comparison-pill.warn {
-            background: rgba(245, 158, 11, 0.15);
-            border-color: rgba(245, 158, 11, 0.32);
-            color: #fde68a;
-        }
-
-        .comparison-pill.neutral {
-            background: rgba(96, 165, 250, 0.12);
-            border-color: rgba(96, 165, 250, 0.28);
-            color: #bfdbfe;
-        }
-
-        .comparison-big {
-            display: flex;
-            align-items: baseline;
-            gap: 0.3rem;
-            margin-top: 0.7rem;
-        }
-
-        .comparison-big .value {
-            font-size: 2rem;
-            line-height: 1;
-            font-weight: 900;
-            letter-spacing: -0.03em;
-        }
-
-        .comparison-big .label {
-            color: #cfc8e8;
-            font-size: 0.82rem;
-            font-weight: 600;
-        }
-
-        .comparison-bar {
-            margin-top: 0.7rem;
-            width: 100%;
-            height: 10px;
-            border-radius: 999px;
-            background: rgba(148, 163, 184, 0.14);
-            overflow: hidden;
-        }
-
-        .comparison-bar > span {
-            display: block;
-            height: 100%;
-            border-radius: inherit;
-            background: linear-gradient(90deg, #22d3ee 0%, #60a5fa 55%, #a855f7 100%);
-        }
-
-        .comparison-columns {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.9rem;
-            margin-top: 0.2rem;
-        }
-
-        .comparison-panel {
-            border-radius: 18px;
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            background: rgba(255, 255, 255, 0.03);
-            padding: 0.95rem 1rem 1rem;
-        }
-
-        .comparison-panel h5 {
-            margin: 0 0 0.6rem;
-            font-size: 0.95rem;
-            font-weight: 800;
-        }
-
-        .comparison-list {
-            display: grid;
-            gap: 0.58rem;
-        }
-
-        .comparison-item {
-            display: grid;
-            grid-template-columns: auto 1fr auto;
-            gap: 0.6rem;
-            align-items: center;
-            padding: 0.52rem 0.62rem;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(148, 163, 184, 0.16);
-        }
-
-        .comparison-icon {
-            width: 2rem;
-            height: 2rem;
-            border-radius: 999px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1rem;
-            font-weight: 900;
-            color: #fff;
-        }
-
-        .comparison-icon.good {
-            background: linear-gradient(135deg, #10b981 0%, #22c55e 100%);
-        }
-
-        .comparison-icon.bad {
-            background: linear-gradient(135deg, #f97316 0%, #ef4444 100%);
-        }
-
-        .comparison-icon.neutral {
-            background: linear-gradient(135deg, #60a5fa 0%, #7c3aed 100%);
-        }
-
-        .comparison-item-title {
-            font-weight: 700;
-            color: #f3edff;
-            font-size: 0.88rem;
-        }
-
-        .comparison-item-sub {
-            color: #bcb3da;
-            font-size: 0.74rem;
-            margin-top: 0.1rem;
-        }
-
-        .comparison-item-value {
-            font-size: 0.96rem;
-            font-weight: 900;
-            white-space: nowrap;
-        }
-
-        .comparison-callout {
-            margin-top: 0.2rem;
-            padding: 0.9rem 1rem;
-            border-radius: 16px;
-            border: 1px solid rgba(96, 165, 250, 0.22);
-            background: linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(17, 24, 39, 0.75) 100%);
-            color: #e5e7eb;
-        }
-
-        .comparison-callout strong {
-            color: #f8fafc;
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -574,6 +437,41 @@ SCHEDULER_LABELS = {
     "WEIGHTED": "Weighted (priority-based)",
 }
 ALLOCATOR_OPTIONS = ["college_based", "workload_based", "pooled", "quota_free"]
+ALLOCATOR_LABELS = {
+    "college_based": "College Based",
+    "workload_based": "Workload Based",
+    "pooled": "Pooled",
+    "quota_free": "Quota Free",
+}
+
+
+def humanize_option_label(value: str) -> str:
+    if not isinstance(value, str):
+        return str(value)
+    if value in SCHEDULER_LABELS:
+        return SCHEDULER_LABELS[value]
+    if value in ALLOCATOR_LABELS:
+        return ALLOCATOR_LABELS[value]
+    if value == "Variant":
+        return "Variant"
+    return value.replace("_", " ").title()
+
+
+def humanize_event_text(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    return text.replace("_", " ").title()
+
+
+def format_variant_label(scheduler: str, allocator: str) -> str:
+    scheduler_label = SCHEDULER_LABELS.get(str(scheduler), str(scheduler))
+    allocator_label = ALLOCATOR_LABELS.get(
+        str(allocator), str(allocator).replace("_", " ").title()
+    )
+    return f"{scheduler_label} | {allocator_label}"
 
 SPEED_OPTIONS = {
     "0.25x": 1.20,
@@ -597,7 +495,7 @@ DEFAULT_STATE = {
     "num_staff": len(COLLEGES),
     "quota_limit": 20,
     "enable_absence": False,
-    "total_requests": 200,
+    "total_requests": 100,
     "imbalance_factor": 0,
     "num_absent_staff": 0,
     "peak_mode": False,
@@ -670,6 +568,14 @@ def collect_ui_config() -> Dict:
 def apply_ui_config(config: Dict):
     if not isinstance(config, dict):
         return
+    
+    raw = config.get("weights_raw", {})
+    old_keys = {"urgency", "requester_type", "waiting_time"}
+    if raw and old_keys.intersection(raw.keys()):
+        st.warning(
+            "This preset was saved with old weight key names and will use default weights. "
+            "Re-save it after running a simulation to update it."
+        )
 
     st.session_state.scheduler_type = config.get("scheduler_type", st.session_state.scheduler_type)
     st.session_state.allocator_type = config.get("allocator_type", st.session_state.allocator_type)
@@ -707,7 +613,6 @@ def apply_ui_config(config: Dict):
     st.session_state.manual_seed = int(config.get("manual_seed", st.session_state.manual_seed))
 
     raw = config.get("weights_raw", {})
-    # Apply raw weights for canonical criteria
     for key in CRITERIA_KEYS:
         state_key = weight_state_key(key)
         st.session_state[state_key] = int(raw.get(key, st.session_state.get(state_key, 50)))
@@ -716,12 +621,12 @@ def apply_ui_config(config: Dict):
         st.session_state[weight_state_key("urgency")] = int(raw.get("urgency", st.session_state.get(weight_state_key("urgency"), 50)))
 
 
+
 def normalized_weights_from_ui() -> Dict[str, float]:
     keys = active_criteria()
     raw = {key: float(st.session_state.get(weight_state_key(key), 0.0)) for key in keys}
     total = sum(raw.values())
     if total <= 0:
-        # Fallback to default PRIORITY_WEIGHTS (module import from backend)
         return PRIORITY_WEIGHTS.copy()
     return {key: value / total for key, value in raw.items()}
 
@@ -736,55 +641,86 @@ def clear_run_state():
     st.session_state.playback_playing = False
 
 
-def build_engine_and_run_config() -> Dict:
+def build_api_payload() -> Dict:
     weights = normalized_weights_from_ui()
     manual_seed = int(st.session_state.manual_seed) if st.session_state.seed_mode == "Manual" else None
     scenario = "peak_period" if st.session_state.peak_mode else "baseline"
-
-    engine_kwargs = {
+    return {
         "scheduler_type": st.session_state.scheduler_type,
         "allocator_type": st.session_state.allocator_type,
-        "staff_config": {
-            "num_staff": int(st.session_state.num_staff),
-            "quota_limit": int(st.session_state.quota_limit),
-        },
-        # If urgency is enabled but all other sliders are zero (user didn't set others),
-        # avoid passing a single-key weights dict that would force urgency=1 and others=0.
-        # Let the engine pick the appropriate ROC defaults instead by passing None.
-        "priority_weights": None if (st.session_state.urgency and sum(weights.get(k, 0.0) for k in weights if k != "urgency") <= 1e-9) else weights,
+        "num_staff": int(st.session_state.num_staff),
+        "quota_limit": int(st.session_state.quota_limit),
+        "total_requests": int(st.session_state.total_requests),
+        "urgency_base": 8 if st.session_state.peak_mode else 5,
+        "imbalance_factor": int(st.session_state.imbalance_factor),
+        "num_absent_staff": int(st.session_state.num_absent_staff) if st.session_state.enable_absence else 0,
         "random_seed": manual_seed,
         "work_start": st.session_state.work_start_time.strftime("%H:%M"),
         "work_end": st.session_state.work_end_time.strftime("%H:%M"),
-        "urgency": bool(st.session_state.urgency),
-    }
-
-    run_config = {
+        "priority_weights": weights,
         "scenario": scenario,
-        "total_requests": int(st.session_state.total_requests),
         "urgency": bool(st.session_state.urgency),
-        "imbalance_factor": int(st.session_state.imbalance_factor),
-        "num_absent_staff": int(st.session_state.num_absent_staff) if st.session_state.enable_absence else 0,
+        "disable_generated_requests": bool(st.session_state.get("disable_generated_requests", False))
     }
-
-    export_bundle = {
-        "engine_kwargs": engine_kwargs,
-        "run_config": run_config,
-        "ui_config": collect_ui_config(),
-    }
-    return export_bundle
 
 
 def run_simulation_now():
-    payload = build_engine_and_run_config()
-    engine = SimulationEngine(**payload["engine_kwargs"])
-    results = engine.run(custom_config=payload["run_config"])
+    payload = build_api_payload()
+    with st.spinner():
+        try:
+            response = requests.post(f"{BACKEND_URL}/simulate", json=payload, timeout=120)
+            if response.status_code == 200:
+                data = response.json()
+                results = data.get("results", {})
+                
+                # Parse API JSON into frontend-compatible objects
+                completed_requests = [RequestRecord(req) for req in results.get("completed_requests", [])]
+                generated_requests = [RequestRecord(req) for req in results.get("generated_requests", [])]
+                waiting_queue = [RequestRecord(req) for req in results.get("waiting_queue", [])]
+                staff_pool = [StaffRecord(s) for s in results.get("staff_info", [])]
+                
+                # Mock engine object to maintain compatibility with existing UI logic
+                class MockEngine:
+                    pass
+                mock_engine = MockEngine()
+                mock_engine.completed = completed_requests
+                mock_engine.generated_requests = generated_requests
+                mock_engine.waiting_queue = waiting_queue
+                mock_engine.staff_pool = staff_pool
+                mock_engine.priority_weights = results.get("priority_weights", {})
+                mock_engine.workday_minutes = 9 * 60
+                mock_engine.urgency = payload.get("urgency", False)
 
-    st.session_state.simulation_engine = engine
-    st.session_state.simulation_results = results
-    st.session_state.last_run_config = payload
-    st.session_state.playback_frame = 0
-    st.session_state.playback_frame_ui = 1
-    st.session_state.playback_playing = False
+                work_hours = results.get("work_hours", {})
+                try:
+                    ws = datetime.strptime(work_hours.get("start", "08:00"), "%H:%M")
+                    we = datetime.strptime(work_hours.get("end", "17:00"), "%H:%M")
+                    mock_engine.workday_minutes = int((we - ws).total_seconds() / 60)
+                except Exception:
+                    mock_engine.workday_minutes = 9 * 60
+                try:
+                    start_str = work_hours.get("start", "08:00")
+                    start_time_obj = datetime.strptime(start_str, "%H:%M").time()
+                    mock_engine.start_time = datetime.now().replace(
+                        hour=start_time_obj.hour,
+                        minute=start_time_obj.minute,
+                        second=0,
+                        microsecond=0,
+                    )
+                except Exception:
+                    mock_engine.start_time = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)
+                    
+                st.session_state.simulation_engine = mock_engine
+                st.session_state.simulation_results = results
+                st.session_state.last_run_config = {"engine_kwargs": payload, "run_config": payload}
+                st.session_state.playback_frame = 0
+                st.session_state.playback_frame_ui = 1
+                st.session_state.playback_playing = False
+            else:
+                st.error(f"Backend error: {response.text}")
+        except requests.exceptions.RequestException as e:
+            st.error(f"Failed to connect to backend at {BACKEND_URL}: {e}. Ensure the Flask server is running.")
+
 
 
 def parse_event_time(value: str) -> datetime:
@@ -843,25 +779,44 @@ CHART_COLORWAY = ["#a855f7", "#7c3aed", "#22d3ee", "#c084fc", "#38bdf8", "#f472b
 
 
 def apply_plot_theme(fig: go.Figure):
+    labels_outside = st.session_state.get("labels_outside", True)
+    # Position legend outside (right) or above (center) depending on toggle
+    if labels_outside:
+        legend_cfg = dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#d9d2f0"), orientation="v", y=1, x=1.02, xanchor="left")
+        margins = dict(l=48, r=180, t=64, b=64)
+        x_title_standoff = 12
+        y_title_standoff = 12
+    else:
+        legend_cfg = dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#d9d2f0"), orientation="h", y=1.02, x=0.5, xanchor="center")
+        margins = dict(l=48, r=64, t=64, b=64)
+        x_title_standoff = 4
+        y_title_standoff = 4
+
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(28,22,46,0.92)",
         colorway=CHART_COLORWAY,
         font=dict(color="#ebe5ff", family="Plus Jakarta Sans, Segoe UI, sans-serif"),
-        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#d9d2f0")),
+        legend=legend_cfg,
+        margin=margins,
+        autosize=True,
     )
     fig.update_xaxes(
         showgrid=True,
         gridcolor="rgba(111,87,164,0.28)",
         zeroline=False,
         linecolor="rgba(130,105,190,0.45)",
+        automargin=True,
+        title_standoff=x_title_standoff,
     )
     fig.update_yaxes(
         showgrid=True,
         gridcolor="rgba(111,87,164,0.28)",
         zeroline=False,
         linecolor="rgba(130,105,190,0.45)",
+        automargin=True,
+        title_standoff=y_title_standoff,
     )
 
 
@@ -875,6 +830,263 @@ def render_theme_table(df: pd.DataFrame, height_px: int = 320):
         unsafe_allow_html=True,
     )
 
+
+def run_variant_for_figure(scheduler_type: str, allocator_type: str) -> Optional[Dict]:
+    last_run = st.session_state.get("last_run_config")
+    if not last_run or "engine_kwargs" not in last_run:
+        return None
+    
+    payload = build_api_payload()
+    payload["scheduler_type"] = scheduler_type
+    payload["allocator_type"] = allocator_type
+    
+    try:
+        response = requests.post(f"{BACKEND_URL}/simulate", json=payload, timeout=120)
+        if response.status_code == 200:
+            return response.json().get("results", {})
+    except requests.exceptions.RequestException:
+        pass
+    return None
+
+
+def build_baseline_queue_dynamics_chart(event_log: List[Dict], variant_label: str = "") -> go.Figure:
+    if not event_log:
+        return go.Figure()
+
+    sorted_log = sorted(
+        event_log,
+        key=lambda ev: (
+            parse_event_time(str(ev.get("time", ""))),
+            ev.get("sequence", 0),
+        ),
+    )
+
+    active_requests = set()
+    queue_sizes = []
+    avg_waits = []
+    time_points = []
+    observed_waits = []
+
+    for event in sorted_log:
+        event_type = str(event.get("event_type", "")).upper()
+        request_id = event.get("request_id")
+
+        if event_type == "ARRIVAL" and request_id:
+            active_requests.add(request_id)
+        elif event_type == "ASSIGN" and request_id:
+            active_requests.discard(request_id)
+            wait_hours = float(event.get("queue_wait_hours", 0.0) or 0.0)
+            observed_waits.append(wait_hours)
+
+        current_time = parse_event_time(str(event.get("time", "")))
+        time_points.append(current_time)
+        queue_sizes.append(len(active_requests))
+        avg_waits.append(round(sum(observed_waits) / len(observed_waits), 2) if observed_waits else 0.0)
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(
+        go.Scatter(
+            x=time_points,
+            y=queue_sizes,
+            mode="lines+markers",
+            name="Queue Size",
+            marker=dict(size=6),
+            line=dict(width=2, color="#a855f7"),
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=time_points,
+            y=avg_waits,
+            mode="lines+markers",
+            name="Avg Waiting Time (h)",
+            marker=dict(size=6),
+            line=dict(width=2, color="#22d3ee"),
+        ),
+        secondary_y=True,
+    )
+
+    chart_title = "Queue Dynamics and Waiting Time Trend"
+    if variant_label:
+        chart_title = f"{chart_title} — {variant_label}"
+
+    fig.update_layout(
+        title=chart_title,
+        height=420,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    fig.update_xaxes(title_text="Simulation Time")
+    fig.update_yaxes(title_text="Queue Size", secondary_y=False)
+    fig.update_yaxes(title_text="Average Queue Wait (h)", secondary_y=True)
+    apply_plot_theme(fig)
+    return fig
+
+
+def build_weighted_priority_distribution_chart(
+    requests: List[Dict], selected_doc_types: List[str], variant_label: str = ""
+) -> go.Figure:
+    rows = []
+    for req in requests:
+        if not req:
+            continue
+
+        if isinstance(req, dict):
+            score = float(req.get("priority_score", 0.0) or 0.0)
+            assigned = bool(req.get("assignment_time"))
+            doc_type = req.get("document_type", "Unknown")
+        else:
+            score = float(getattr(req, "priority_score", 0.0) or 0.0)
+            assigned = getattr(req, "assignment_time", None) is not None
+            doc_type = getattr(req, "document_type", "Unknown")
+
+        if selected_doc_types and doc_type not in selected_doc_types:
+            continue
+
+        rows.append(
+            {
+                "Priority Score": score,
+                "Status": "Assigned" if assigned else "Unassigned",
+                "Document Type": doc_type,
+            }
+        )
+
+    if not rows:
+        return go.Figure()
+
+    df = pd.DataFrame(rows)
+    chart_title = "Priority Score Distribution by Request Type"
+    if variant_label:
+        chart_title = f"{chart_title} — {variant_label}"
+
+    fig = px.histogram(
+        df,
+        x="Priority Score",
+        color="Document Type",
+        barmode="overlay",
+        nbins=20,
+        histnorm="percent",
+        title=chart_title,
+        labels={
+            "Priority Score": "Priority Score",
+            "Document Type": "Request Type",
+        },
+        height=420,
+    )
+    fig.update_traces(opacity=0.75)
+    fig.update_layout(
+        legend=dict(title="Request Type", orientation="h", y=1.02, x=0.5, xanchor="center")
+    )
+    apply_plot_theme(fig)
+    return fig
+
+
+def build_workload_imbalance_chart(compare_df: pd.DataFrame, title: str = "Workload Imbalance and Utilization Variance") -> go.Figure:
+    if compare_df is None or compare_df.empty:
+        return go.Figure()
+
+    df = compare_df.copy()
+    df["variant"] = df.apply(
+        lambda row: format_variant_label(row["scheduler"], row["allocator"]),
+        axis=1,
+    )
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(
+        go.Bar(
+            x=df["variant"],
+            y=df["staff_load_std"],
+            name="Staff Load Std Dev",
+            marker_color="#a855f7",
+            text=df["staff_load_std"],
+            textposition="outside",
+            customdata=df[["avg_waiting_time_hours"]],
+            hovertemplate="%{x}<br>Std Dev: %{y}<br>Avg Wait: %{customdata[0]} h<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df["variant"],
+            y=df["staff_load_cv"],
+            name="Staff Load CV",
+            mode="lines+markers",
+            marker=dict(color="#22d3ee", size=8),
+            line=dict(width=2),
+        ),
+        secondary_y=True,
+    )
+    fig.update_layout(
+        title="Workload Imbalance by Variant",
+        height=500,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    fig.update_xaxes(title_text="Variant")
+    fig.update_yaxes(title_text="Staff Load Std Dev", secondary_y=False)
+    fig.update_yaxes(title_text="Staff Load CV", secondary_y=True)
+    apply_plot_theme(fig)
+    return fig
+
+
+def build_variant_summary_chart(compare_df: pd.DataFrame, title: str = "Summary of Variant Performance") -> go.Figure:
+    if compare_df is None or compare_df.empty:
+        return go.Figure()
+
+    df = compare_df.copy()
+
+    df["variant"] = df.apply(
+        lambda row: format_variant_label(row["scheduler"], row["allocator"]),
+        axis=1,
+    )
+
+    summary_df = df.melt(
+        id_vars=["variant"],
+        value_vars=[
+            "avg_waiting_time_hours",
+            "throughput_req_per_day",
+            "staff_load_std",
+        ],
+        var_name="metric",
+        value_name="value",
+    )
+
+    metric_names = {
+        "avg_waiting_time_hours": "Avg Waiting Time (h)",
+        "throughput_req_per_day": "Throughput (req/day)",
+        "staff_load_std": "Staff Load Std Dev",
+    }
+
+    summary_df["metric"] = summary_df["metric"].map(metric_names)
+
+    # optional: "result number" (rank within metric)
+    summary_df["result_no"] = summary_df.groupby("metric").cumcount() + 1
+
+    fig = px.bar(
+        summary_df,
+        x="variant",
+        y="value",
+        color="metric",
+        barmode="group",
+        title=title,
+        height=500,
+        labels={"variant": "Variant", "value": "Metric Value", "metric": "Metric"},
+        text="value",  # show value on top
+    )
+
+    fig.update_traces(
+        textposition="outside",
+        hovertemplate=(
+            "<b>%{x}</b><br>"
+            "Metric: %{legendgroup}<br>"
+            "Value: %{y:.4f}<br>"
+            "Result #: %{customdata}<extra></extra>"
+        ),
+        customdata=summary_df[["result_no"]],
+    )
+
+    apply_plot_theme(fig)
+
+    return fig
 
 def routing_events(event_log: List[Dict]) -> List[Dict]:
     """Keep only request-routing decisions for request-by-request playback."""
@@ -912,7 +1124,7 @@ def playback_state(decisions: List[Dict], step: int) -> Dict:
                     "Staff": item.get("staff_id"),
                     "Priority Score": item.get("priority_score", 0.0),
                     "Queue Wait (h)": item.get("queue_wait_hours", "-"),
-                    "Mode": item.get("details", ""),
+                    "Mode": humanize_event_text(item.get("details", "")),
                 }
             )
             staff_key = item.get("staff_id") or "UNASSIGNED"
@@ -924,7 +1136,7 @@ def playback_state(decisions: List[Dict], step: int) -> Dict:
                     "Request": item.get("request_id"),
                     "College": item.get("college"),
                     "Priority Score": item.get("priority_score", 0.0),
-                    "Reason": item.get("details", ""),
+                    "Reason": humanize_event_text(item.get("details", "")),
                 }
             )
 
@@ -1028,7 +1240,12 @@ st.sidebar.selectbox(
     key="scheduler_type",
     format_func=lambda value: SCHEDULER_LABELS.get(value, value),
 )
-st.sidebar.selectbox("Allocator", ALLOCATOR_OPTIONS, key="allocator_type")
+st.sidebar.selectbox(
+    "Allocator",
+    ALLOCATOR_OPTIONS,
+    key="allocator_type",
+    format_func=lambda value: ALLOCATOR_LABELS.get(value, value.replace("_", " ").title()),
+)
 
 st.sidebar.subheader("Capacity and Policy")
 st.sidebar.slider(
@@ -1073,12 +1290,13 @@ st.sidebar.time_input("Workday End", key="work_end_time")
 st.sidebar.subheader("Demand")
 st.sidebar.slider("Total Daily Requests", min_value=50, max_value=500, step=10, key="total_requests")
 st.sidebar.checkbox("Enable Urgency", value=False, key="urgency")
+st.sidebar.checkbox("Disable Generated Requests", value=False, key="disable_generated_requests", help="If enabled, only custom requests stored in the database are simulated.")
 def on_peak_mode_change():
     if st.session_state.peak_mode:
-        if st.session_state.total_requests == 200:
-            st.session_state.total_requests = 400
-    elif st.session_state.total_requests == 400:
-        st.session_state.total_requests = 200
+        if st.session_state.total_requests == 100:
+            st.session_state.total_requests = 300
+    elif st.session_state.total_requests == 300:
+        st.session_state.total_requests = 100
 
 st.sidebar.checkbox("Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change)
 st.sidebar.slider("College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
@@ -1098,7 +1316,6 @@ else:
 
 if st.session_state.scheduler_type == "WEIGHTED":
     st.sidebar.subheader("Weighted Priority")
-    # Ensure session_state has entries for any active criteria (including urgency)
     for key in active_criteria():
         state_key = weight_state_key(key)
         if state_key not in st.session_state:
@@ -1149,6 +1366,94 @@ if save_clicked:
         st.sidebar.success(f"Saved preset: {name}")
     else:
         st.sidebar.warning("Enter a preset name before saving.")
+
+# ============================================================================
+# CUSTOM REQUESTS MANAGER IN SIDEBAR
+# ============================================================================
+with st.sidebar.expander("🛠️ Custom Request Manager", expanded=False):
+    # Fetch current custom requests
+    try:
+        res = requests.get(f"{BACKEND_URL}/api/custom-requests", timeout=5)
+        if res.status_code == 200:
+            custom_reqs = res.json()
+        else:
+            custom_reqs = []
+    except Exception:
+        custom_reqs = []
+
+    st.markdown("### ➕ Add Custom Request")
+    c_college = st.selectbox("College", COLLEGES, key="c_req_college")
+    c_doc = st.selectbox("Document Type", list(DOCUMENT_COMPLEXITY.keys()), key="c_req_doc")
+    c_requester = st.selectbox("Requester Type", list(REQUESTER_PRIORITY.keys()), key="c_req_requester")
+    c_urgency = st.slider("Urgency Level", min_value=1, max_value=10, value=5, key="c_req_urgency")
+    c_sub_time = st.text_input("Submission Time", value="09:00", help="Use HH:MM format (e.g. 09:15) or full ISO datetime.", key="c_req_sub")
+    c_payment = st.selectbox("Payment Status", ["Paid", "Unpaid"], key="c_req_payment")
+    c_stage = st.selectbox("Requirements Stage", ["complete", "partial", "incomplete"], key="c_req_stage")
+    
+    if st.button("➕ Add Request", use_container_width=True, key="c_req_add_btn"):
+        payload = {
+            "college": c_college,
+            "document_type": c_doc,
+            "urgency": c_urgency,
+            "requester_type": c_requester,
+            "submission_time": c_sub_time,
+            "payment_status": c_payment,
+            "requirements_stage": c_stage,
+            "completeness_of_requirements": 1.0 if c_stage == "complete" else (0.7 if c_stage == "partial" else 0.3)
+        }
+        try:
+            add_res = requests.post(f"{BACKEND_URL}/api/custom-requests", json=payload, timeout=5)
+            if add_res.status_code == 201:
+                st.sidebar.success(f"Successfully added custom request: {add_res.json().get('request_id')}")
+                tm.sleep(0.5)
+                st.rerun()
+            else:
+                st.sidebar.error(f"Failed to add: {add_res.text}")
+        except Exception as e:
+            st.sidebar.error(f"Error connecting to backend: {e}")
+            
+    if custom_reqs:
+        st.markdown("### 📋 Existing Custom Requests")
+        custom_df = pd.DataFrame([
+            {
+                "ID": r["request_id"],
+                "College": r["college"],
+                "Document": r["document_type"],
+                "Urgency": r["urgency"],
+                "Requester": r["requester_type"],
+                "Submission": r["submission_time"],
+                "Requirements": r["requirements_stage"],
+                "Payment": r["payment_status"]
+            } for r in custom_reqs
+        ])
+        st.dataframe(custom_df, use_container_width=True)
+        
+        to_delete = st.selectbox("Select Request ID to Delete", options=[r["request_id"] for r in custom_reqs], key="c_req_to_delete")
+        if st.button("🗑️ Delete Selected Request", use_container_width=True, key="c_req_del_btn"):
+            try:
+                del_res = requests.delete(f"{BACKEND_URL}/api/custom-requests/{to_delete}", timeout=5)
+                if del_res.status_code == 200:
+                    st.sidebar.success(f"Deleted {to_delete}")
+                    tm.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.sidebar.error(f"Failed to delete: {del_res.text}")
+            except Exception as e:
+                st.sidebar.error(f"Error: {e}")
+                
+        if st.button("💥 Clear All Requests", use_container_width=True, key="c_req_clear_btn"):
+            try:
+                clear_res = requests.delete(f"{BACKEND_URL}/api/custom-requests", timeout=5)
+                if clear_res.status_code == 200:
+                    st.sidebar.success("Cleared all custom requests")
+                    tm.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.sidebar.error(f"Failed to clear: {clear_res.text}")
+            except Exception as e:
+                st.sidebar.error(f"Error: {e}")
+    else:
+        st.sidebar.info("No custom requests in the database. Add one above or via API.")
 # 🔍 DEBUG: Urgency Toggle Verification
 if st.session_state.simulation_engine is not None:
     with st.sidebar.expander("🐛 Debug: Urgency Status", expanded=False):
@@ -1163,6 +1468,9 @@ if st.session_state.simulation_engine is not None:
 if run_clicked:
     with st.spinner("Running simulation..."):
         run_simulation_now()
+
+
+# Custom Request Manager moved to sidebar expander.
 
 
 # ============================================================================
@@ -1186,7 +1494,7 @@ st.markdown(
     <div class="hero-band">
         <div>
             <p class="hero-kicker">Simulation Snapshot</p>
-            <p class="hero-title">Scheduler: {results.get('scheduler_type')} | Allocator: {results.get('allocator_type')}</p>
+            <p class="hero-title">Scheduler: {SCHEDULER_LABELS.get(results.get('scheduler_type'), results.get('scheduler_type'))} | Allocator: {ALLOCATOR_LABELS.get(results.get('allocator_type'), str(results.get('allocator_type')).replace('_', ' ').title())}</p>
             <p class="hero-sub">Seed: {seed_used} | Mode: Custom sliders</p>
         </div>
         <div class="hero-pill">Ready for playback</div>
@@ -1276,9 +1584,12 @@ else:
             staff_rows[staff_id] = []
             staff_meta[staff_id] = {"college": "-", "quota": None}
 
+        is_custom_req = request_meta.get("is_custom", False)
+        req_display = f"⭐ {request_id}" if is_custom_req else request_id
+
         staff_rows[staff_id].append(
             {
-                "Request": request_id,
+                "Request": req_display,
                 "College": request_meta.get("college", assignment.get("College")),
                 "Document": request_meta.get("document_type", "-"),
                 "Priority Score": round(float(priority_score or 0.0), 4),
@@ -1300,9 +1611,13 @@ else:
             continue
         request_meta = request_lookup.get(request_id, {})
         event_time_raw = waiting_item.get("Time")
+        
+        is_custom_req = request_meta.get("is_custom", False)
+        req_display = f"⭐ {request_id}" if is_custom_req else request_id
+        
         waiting_rows.append(
             {
-                "Request": request_id,
+                "Request": req_display,
                 "College": request_meta.get("college", waiting_item.get("College")),
                 "Document": request_meta.get("document_type", "-"),
                 "Priority Score": round(float(request_meta.get("priority_score", waiting_item.get("Priority Score", 0.0)) or 0.0), 4),
@@ -1328,9 +1643,6 @@ else:
         for assign_item in frame_data["assignments"]:
             if assign_item.get("Request"):
                 routed_request_ids.add(assign_item["Request"])
-        for waiting_item in frame_data["waiting"]:
-            if waiting_item.get("Request"):
-                routed_request_ids.add(waiting_item["Request"])
 
         pending_queue_rows = []
         for request_id, request_meta in request_lookup.items():
@@ -1339,9 +1651,11 @@ else:
                 continue
             submission_time = parse_event_time(submission_raw)
             if submission_time <= current_time and request_id not in routed_request_ids:
+                is_custom_req = request_meta.get("is_custom", False)
+                req_display = f"⭐ {request_id}" if is_custom_req else request_id
                 pending_queue_rows.append(
                     {
-                        "Request": request_id,
+                        "Request": req_display,
                         "College": request_meta.get("college", "-"),
                         "Document": request_meta.get("document_type", "-"),
                         "Priority Score": round(float(request_meta.get("priority_score", 0.0) or 0.0), 4),
@@ -1360,19 +1674,22 @@ else:
         for row in pending_queue_rows:
             row.pop("_sort_submission", None)
 
-        card1, card2, card3, card4, card5 = st.columns(5)
+        card1, card2, card3, card4, card5 = st.columns([1.6, 1, 1, 1, 1])
         card1.metric("Simulation Clock", current_time.strftime("%Y-%m-%d %H:%M"))
         card2.metric("Current Request Step", f"{st.session_state.playback_frame + 1}/{max_step + 1}")
         card3.metric("Processed Decisions", frame_data["processed_count"])
         card4.metric("Assigned So Far", frame_data["assigned_count"])
-        card5.metric("Queue Size Now", len(pending_queue_rows) + frame_data["waiting_count"])
+        card5.metric("Queue Size Now", len(pending_queue_rows))
+
+        routing_event_label = str(current_event.get("event_type", "")).replace("_", " ").title()
+        routing_detail_label = str(current_event.get("details", "")).replace("_", " ").title()
 
         st.markdown(
             "**Current Routing Decision:** "
-            f"{current_event.get('event_type')} | "
+            f"{routing_event_label} | "
             f"Request={current_event.get('request_id')} | "
             f"Staff={format_staff_label(current_event.get('staff_id'), staff_college_map)} | "
-            f"Details={current_event.get('details')}"
+            f"Details={routing_detail_label}"
         )
 
         st.subheader("Staff Capacity View")
@@ -1507,26 +1824,36 @@ else:
 
 st.header("Key Metrics")
 
+custom_m = results.get("custom_metrics", {"avg_waiting_time_hours": 0.0, "avg_turnaround_days": 0.0, "total_processed": 0})
+gen_m = results.get("generated_metrics", {"avg_waiting_time_hours": 0.0, "avg_turnaround_days": 0.0, "total_processed": 0})
+
+custom_count = custom_m.get("total_processed", 0)
+gen_count = gen_m.get("total_processed", 0)
+
 k1, k2, k3, k4, k5 = st.columns(5)
 with k1:
     processed = int(results.get("total_processed", 0))
     expected = int(st.session_state.total_requests)
     pct = (processed / expected * 100.0) if expected > 0 else 0.0
-    st.metric("Total Processed", f"{processed}/{expected}", f"{pct:.0f}%")
+    if custom_count > 0:
+        delta_str = f"{gen_count} Gen | {custom_count} Cust"
+    else:
+        delta_str = f"{pct:.0f}%"
+    st.metric("Total Processed", f"{processed}/{expected}" if not st.session_state.get("disable_generated_requests", False) else f"{processed} Custom", delta_str)
 with k2:
     avg_wait_hours = float(results.get("avg_waiting_time_hours", 0.0))
-    st.metric(
-        "Avg Queue Wait",
-        f"{avg_wait_hours:.2f} h",
-        f"{(avg_wait_hours / 24.0):.2f} d equiv",
-    )
+    if custom_count > 0 and gen_count > 0:
+        delta_wait = f"Gen: {gen_m.get('avg_waiting_time_hours', 0.0):.1f}h | Cust: {custom_m.get('avg_waiting_time_hours', 0.0):.1f}h"
+    else:
+        delta_wait = f"{(avg_wait_hours / 24.0):.2f} d equiv"
+    st.metric("Avg Queue Wait", f"{avg_wait_hours:.2f} h", delta_wait)
 with k3:
     avg_turn_days = float(results.get("avg_turnaround_days", 0.0))
-    st.metric(
-        "Avg Turnaround",
-        f"{avg_turn_days:.2f} d",
-        f"{(avg_turn_days * 24.0):.2f} h equiv",
-    )
+    if custom_count > 0 and gen_count > 0:
+        delta_turn = f"Gen: {gen_m.get('avg_turnaround_days', 0.0):.1f}d | Cust: {custom_m.get('avg_turnaround_days', 0.0):.1f}d"
+    else:
+        delta_turn = f"{(avg_turn_days * 24.0):.2f} h equiv"
+    st.metric("Avg Turnaround", f"{avg_turn_days:.2f} d", delta_turn)
 with k4:
     elapsed_days = float(results.get("total_days_elapsed", 0.0))
     elapsed_day_index = max(1, int(math.floor(elapsed_days)) + 1)
@@ -1541,6 +1868,63 @@ with k5:
 if results.get("absent_staff"):
     st.warning("Absent staff: " + ", ".join(results.get("absent_staff", [])))
 
+variant_label = format_variant_label(
+    results.get('scheduler_type', ''), results.get('allocator_type', '')
+)
+
+st.header("Visualizations")
+
+st.markdown(
+    f"**Scheduler:** {humanize_option_label(results.get('scheduler_type'))}<br>"
+    f"**Allocator:** {humanize_option_label(results.get('allocator_type'))}"
+    , unsafe_allow_html=True,
+)
+
+# Toggle to place legend/labels outside the plot area for easier filtering
+labels_outside_default = st.session_state.get("labels_outside", True)
+st.checkbox(
+    "Show labels outside charts (useful for filtering)",
+    value=labels_outside_default,
+    key="labels_outside",
+)
+
+fig_41 = build_baseline_queue_dynamics_chart(results.get("event_log", []), variant_label)
+if fig_41.data:
+    st.plotly_chart(fig_41, use_container_width=True)
+else:
+    st.info("Queue dynamics are not available for the selected simulation.")
+
+if results.get("scheduler_type") == "WEIGHTED":
+    generated_requests = results.get("generated_requests", [])
+    request_types = sorted(
+        {
+            (req.get("document_type") if isinstance(req, dict) else getattr(req, "document_type", None))
+            for req in generated_requests
+            if req is not None
+        }
+    )
+    request_types = [rt for rt in request_types if rt]
+    selected_request_types = st.multiselect(
+        "Request types to include in the priority distribution",
+        options=request_types,
+        default=request_types,
+        key="priority_distribution_doc_types",
+    )
+
+    if not selected_request_types:
+        st.info("Select one or more request types to display the priority score distribution.")
+    else:
+        fig_43 = build_weighted_priority_distribution_chart(
+            generated_requests,
+            selected_request_types,
+            variant_label,
+        )
+        if fig_43.data:
+            st.plotly_chart(fig_43, use_container_width=True)
+        else:
+            st.info("Priority score distribution is not available for the selected simulation.")
+else:
+    st.info("Priority score distribution is only shown for the WEIGHTED scheduler.")
 
 # ============================================================================
 # STAFF LOAD + TIMELINE CHARTS
@@ -1548,66 +1932,63 @@ if results.get("absent_staff"):
 
 st.header("Staff and Timeline")
 
-chart_col1, chart_col2 = st.columns(2)
-
-with chart_col1:
-    staff_load = results.get("staff_load", {})
-    if staff_load:
-        staff_ids = list(staff_load.keys())
-        staff_labels = [format_staff_label(staff_id, staff_college_map) for staff_id in staff_ids]
-        staff_values = [staff_load[staff_id] for staff_id in staff_ids]
-        fig_staff = go.Figure(
-            data=[
-                go.Bar(
-                    x=staff_labels,
-                    y=staff_values,
-                    marker=dict(
-                        color=staff_values,
-                        colorscale=[
-                            [0.0, "#5b21b6"],
-                            [0.55, "#9333ea"],
-                            [1.0, "#22d3ee"],
-                        ],
-                    ),
-                    text=staff_values,
-                    textposition="outside",
-                )
-            ]
-        )
-        fig_staff.update_layout(
-            title="Requests Processed per Staff",
-            xaxis_title="Staff",
-            yaxis_title="Processed Requests",
-            height=400,
-        )
-        apply_plot_theme(fig_staff)
-        st.plotly_chart(fig_staff, use_container_width=True)
-
-with chart_col2:
-    if engine.completed:
-        timeline_rows = []
-        for req in engine.completed:
-            assigned_day = (req.assignment_time.date() - engine.start_time.date()).days + 1
-            timeline_rows.append(
-                {
-                    "Assigned Day": assigned_day,
-                    "College": req.college,
-                    "Count": 1,
-                }
+staff_load = results.get("staff_load", {})
+if staff_load:
+    staff_ids = list(staff_load.keys())
+    staff_labels = [format_staff_label(staff_id, staff_college_map) for staff_id in staff_ids]
+    staff_values = [staff_load[staff_id] for staff_id in staff_ids]
+    fig_staff = go.Figure(
+        data=[
+            go.Bar(
+                x=staff_labels,
+                y=staff_values,
+                marker=dict(
+                    color=staff_values,
+                    colorscale=[
+                        [0.0, "#5b21b6"],
+                        [0.55, "#9333ea"],
+                        [1.0, "#22d3ee"],
+                    ],
+                ),
+                text=staff_values,
+                textposition="outside",
             )
-        timeline_df = pd.DataFrame(timeline_rows)
-        grouped = timeline_df.groupby(["Assigned Day", "College"]).size().reset_index(name="Count")
-        fig_timeline = px.bar(
-            grouped,
-            x="Assigned Day",
-            y="Count",
-            color="College",
-            color_discrete_sequence=CHART_COLORWAY,
-            title="Assignments per Day by College",
-            height=400,
+        ]
+    )
+    fig_staff.update_layout(
+        title=f"Requests Processed per Staff — {variant_label}",
+        xaxis_title="Staff",
+        yaxis_title="Processed Requests",
+        height=450,
+    )
+    apply_plot_theme(fig_staff)
+    st.plotly_chart(fig_staff, use_container_width=True)
+
+if engine.completed:
+    timeline_rows = []
+    for req in engine.completed:
+        assigned_day = (req.assignment_time.date() - engine.start_time.date()).days + 1
+        timeline_rows.append(
+            {
+                "Assigned Day": assigned_day,
+                "College": req.college,
+                "Count": 1,
+            }
         )
-        apply_plot_theme(fig_timeline)
-        st.plotly_chart(fig_timeline, use_container_width=True)
+    timeline_df = pd.DataFrame(timeline_rows)
+    grouped = timeline_df.groupby(["Assigned Day", "College"]).size().reset_index(name="Count")
+    fig_timeline = px.bar(
+        grouped,
+        x="Assigned Day",
+        y="Count",
+        color="College",
+        color_discrete_sequence=CHART_COLORWAY,
+        title=f"Assignments per Day by College — {variant_label}",
+        height=450,
+        text="Count" if st.session_state.labels_outside else None,
+    )
+    apply_plot_theme(fig_timeline)
+    st.plotly_chart(fig_timeline, use_container_width=True)
 
 if engine.completed:
     selected_college = st.selectbox(
@@ -1653,7 +2034,7 @@ if engine.completed:
                 ]
             )
             fig_docs.update_layout(
-                title="Requested Document Mix (Completed)",
+                title=f"Requested Document Mix (Completed) — {variant_label}",
                 height=420,
                 showlegend=False,
             )
@@ -1698,7 +2079,6 @@ if engine.completed:
                     st.markdown("".join(block), unsafe_allow_html=True)
     else:
         st.caption("No completed requests for the selected college.")
-
 
 # ============================================================================
 # REQUEST INSPECTION
@@ -1786,7 +2166,7 @@ else:
         table_rows.append(
             {
                 "Row": idx + 1,
-                "Request": req.request_id,
+                "Request": f"⭐ {req.request_id}" if getattr(req, "is_custom", False) else req.request_id,
                 "College": req.college,
                 "Document": req.document_type,
                 "Completeness": round(float(getattr(req, "completeness_of_requirements", 0.0)), 2),
@@ -1864,8 +2244,6 @@ else:
                 request_obj.priority_score,
             )
             try:
-                # Ensure we pass the engine's urgency flag so the same
-                # weighting behavior is applied when computing scores.
                 return request_obj.calculate_priority(
                     at_time,
                     engine.priority_weights,
@@ -2049,9 +2427,19 @@ st.header("Comparison Tools")
 
 c1, c2 = st.columns(2)
 with c1:
-    compare_schedulers = st.multiselect("Schedulers", SCHEDULER_OPTIONS, default=SCHEDULER_OPTIONS)
+    compare_schedulers = st.multiselect(
+        "Schedulers",
+        SCHEDULER_OPTIONS,
+        default=SCHEDULER_OPTIONS,
+        format_func=lambda value: SCHEDULER_LABELS.get(value, value),
+    )
 with c2:
-    compare_allocators = st.multiselect("Allocators", ALLOCATOR_OPTIONS, default=ALLOCATOR_OPTIONS)
+    compare_allocators = st.multiselect(
+        "Allocators",
+        ALLOCATOR_OPTIONS,
+        default=ALLOCATOR_OPTIONS,
+        format_func=lambda value: ALLOCATOR_LABELS.get(value, value.replace("_", " ").title()),
+    )
 
 if st.button("Run Comparison Across Selected Variants", use_container_width=True):
     if not compare_schedulers or not compare_allocators:
@@ -2061,63 +2449,65 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
         compare_details = []
         same_seed = int(results.get("seed_used", st.session_state.manual_seed))
 
-        for scheduler in compare_schedulers:
-            for allocator in compare_allocators:
-                compare_engine = SimulationEngine(
-                    scheduler_type=scheduler,
-                    allocator_type=allocator,
-                    staff_config={
-                        "num_staff": int(st.session_state.num_staff),
-                        "quota_limit": int(st.session_state.quota_limit),
-                    },
-                    priority_weights=normalized_weights_from_ui(),
-                    random_seed=same_seed,
-                    work_start=st.session_state.work_start_time.strftime("%H:%M"),
-                    work_end=st.session_state.work_end_time.strftime("%H:%M"),
-                    urgency= st.session_state.urgency,
-                )
-                compare_result = compare_engine.run(
-                    custom_config={
-                        "scenario": "peak_period" if st.session_state.peak_mode else "baseline",
-                        "total_requests": int(st.session_state.total_requests),
-                        "urgency": bool(st.session_state.urgency),
-                        "imbalance_factor": int(st.session_state.imbalance_factor),
-                        "num_absent_staff": int(st.session_state.num_absent_staff),
-                    }
-                )
-
-                compare_details.append(
-                    {
-                        "scheduler": scheduler,
-                        "allocator": allocator,
-                        "completed_requests": compare_result.get("completed_requests", []),
-                    }
-                )
-
-                compare_rows.append(
-                    {
-                        "scheduler": scheduler,
-                        "allocator": allocator,
-                        "total_processed": compare_result.get("total_processed", 0),
-                        "avg_waiting_time_hours": compare_result.get("avg_waiting_time_hours", 0.0),
-                        "avg_turnaround_days": compare_result.get("avg_turnaround_days", 0.0),
-                        "total_days_elapsed": compare_result.get("total_days_elapsed", 0.0),
-                        "throughput_req_per_day": compare_result.get("throughput_req_per_day", 0.0),
-                    }
-                )
-
+        base_payload = build_api_payload()
+        
+        with st.spinner("Running comparison simulations on backend..."):
+            for scheduler in compare_schedulers:
+                for allocator in compare_allocators:
+                    payload = base_payload.copy()
+                    payload["scheduler_type"] = scheduler
+                    payload["allocator_type"] = allocator
+                    payload["random_seed"] = same_seed
+                    
+                    try:
+                        response = requests.post(f"{BACKEND_URL}/simulate", json=payload, timeout=120)
+                        if response.status_code == 200:
+                            data = response.json()
+                            compare_result = data.get("results", {})
+                            
+                            compare_details.append(
+                                {
+                                    "scheduler": scheduler,
+                                    "allocator": allocator,
+                                    "completed_requests": compare_result.get("completed_requests", []),
+                                }
+                            )
+                            staff_load_values = list(compare_result.get("staff_load", {}).values())
+                            if not staff_load_values:
+                                staff_load_std = 0.0
+                                staff_load_mean = 0.0
+                                staff_load_cv = 0.0
+                            else:
+                                s = pd.Series(staff_load_values)
+                                staff_load_std = float(s.std(ddof=0))
+                                staff_load_mean = float(s.mean())
+                                staff_load_cv = round(staff_load_std / staff_load_mean, 4) if staff_load_mean > 0 else 0.0
+                            
+                            compare_rows.append(
+                                {
+                                    "scheduler": scheduler,
+                                    "allocator": allocator,
+                                    "total_processed": compare_result.get("total_processed", 0),
+                                    "avg_waiting_time_hours": compare_result.get("avg_waiting_time_hours", 0.0),
+                                    "avg_turnaround_days": compare_result.get("avg_turnaround_days", 0.0),
+                                    "total_days_elapsed": compare_result.get("total_days_elapsed", 0.0),
+                                    "throughput_req_per_day": compare_result.get("throughput_req_per_day", 0.0),
+                                    "staff_load_std": round(staff_load_std, 2),
+                                    "staff_load_cv": round(staff_load_cv, 4),
+                                }
+                            )
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"Failed to run {scheduler} + {allocator}: {e}")
+        
         compare_df = pd.DataFrame(compare_rows)
-
         baseline = compare_df[
             (compare_df["scheduler"] == "FCFS")
             & (compare_df["allocator"] == "college_based")
         ]
-
         if baseline.empty:
             baseline_row = compare_df.iloc[0]
         else:
             baseline_row = baseline.iloc[0]
-
         compare_df["delta_wait_vs_baseline"] = (
             compare_df["avg_waiting_time_hours"] - baseline_row["avg_waiting_time_hours"]
         ).round(2)
@@ -2127,86 +2517,323 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
         compare_df["delta_turnaround_vs_baseline"] = (
             compare_df["avg_turnaround_days"] - baseline_row["avg_turnaround_days"]
         ).round(2)
-
         st.session_state.comparison_df = compare_df
+        st.session_state.comparison_details = compare_details
+
 
 if st.session_state.comparison_df is not None:
+    # Prepare display dataframe from the stored comparison results
     compare_df = st.session_state.comparison_df.copy()
+
+    # Formal allocator and scheduler labels
+    ALLOCATOR_LABELS = {
+        "college_based": "College Based",
+        "workload_based": "Workload Based",
+        "pooled": "Pooled",
+        "quota_free": "Quota Free",
+    }
+
+    # Use existing SCHEDULER_LABELS for scheduler display where available
+    scheduler_display = compare_df["scheduler"].map(lambda s: SCHEDULER_LABELS.get(s, str(s)))
+    allocator_display = compare_df["allocator"].map(lambda a: ALLOCATOR_LABELS.get(a, str(a).replace("_", " ").title()))
+    compare_df["Variant"] = scheduler_display + " | " + allocator_display
+
+    st.subheader("Variant Comparison Table")
+    st.caption("Use the filters below to select which variants and columns appear in the comparison table.")
+
+    # Variant filter (multi-select)
+    variant_options = list(compare_df["Variant"].unique())
+    selected_variants = st.multiselect("Show variants", variant_options, default=variant_options)
+    if selected_variants:
+        compare_df = compare_df[compare_df["Variant"].isin(selected_variants)].copy()
+
+    # Column selector for the comparison table — exclude scheduler/allocator because Variant summarizes them
+    available_cols = [
+        c
+        for c in compare_df.columns
+        if c not in ("Variant", "scheduler", "allocator")
+    ]
+    # Put Variant first in defaults
+    default_cols = ["Variant"] + available_cols
+    selected_cols = st.multiselect(
+        "Columns to display",
+        options=default_cols,
+        default=default_cols,
+        format_func=humanize_option_label,
+    )
+
+    if not selected_cols:
+        st.info("Select at least one column to display the comparison table.")
+    else:
+        # Human-friendly column labels
+        def human_label(col: str) -> str:
+            labels = {
+                "scheduler": "Scheduler",
+                "allocator": "Allocator",
+                "Variant": "Variant",
+                "total_processed": "Total Processed",
+                "avg_waiting_time_hours": "Avg Waiting Time (h)",
+                "avg_turnaround_days": "Avg Turnaround (d)",
+                "total_days_elapsed": "Total Days Elapsed",
+                "throughput_req_per_day": "Throughput (req/day)",
+                "staff_load_std": "Staff Load Std Dev",
+                "staff_load_cv": "Staff Load CV",
+                "delta_wait_vs_baseline": "Δ Wait vs Baseline (h)",
+                "delta_throughput_vs_baseline": "Δ Throughput vs Baseline",
+                "delta_turnaround_vs_baseline": "Δ Turnaround vs Baseline (d)",
+                "order_changed_pct": "Order Changed (%)",
+            }
+            if col in labels:
+                return labels[col]
+            # fallback: turn snake_case into Title Case
+            return str(col).replace("_", " ").title()
+
+        # Build display DataFrame and rename columns for presentation
+        display_df = compare_df[selected_cols].copy()
+        rename_map = {c: human_label(c) for c in display_df.columns}
+        display_df.rename(columns=rename_map, inplace=True)
+
+        render_theme_table(display_df, height_px=420)
+
+        # Also show charts for the filtered variants
+        imbalance_fig = build_workload_imbalance_chart(compare_df)
+        if imbalance_fig.data:
+            st.subheader("Workload Imbalance by Variant")
+            st.plotly_chart(imbalance_fig, use_container_width=True)
+
+        summary_fig = build_variant_summary_chart(compare_df)
+        if summary_fig.data:
+            st.subheader("Variant Performance Summary")
+            st.plotly_chart(summary_fig, use_container_width=True)
+
+comparison_details = st.session_state.get("comparison_details")
+if st.session_state.comparison_df is not None and comparison_details:
+    st.subheader("Request-Level Differences")
+
+    def _build_request_index(completed_requests: List[Dict]) -> Dict[str, Dict[str, object]]:
+        rows = []
+        for item in completed_requests:
+            request_id = item.get("request_id")
+            if not request_id:
+                continue
+            assign_raw = item.get("assignment_time")
+            complete_raw = item.get("completion_time")
+            rows.append(
+                {
+                    "request_id": request_id,
+                    "assignment_time": parse_event_time(str(assign_raw)) if assign_raw else None,
+                    "completion_time": parse_event_time(str(complete_raw)) if complete_raw else None,
+                    "assigned_staff": item.get("assigned_staff"),
+                }
+            )
+
+        rows = sorted(
+            rows,
+            key=lambda r: (r["assignment_time"] or datetime.max, r["request_id"]),
+        )
+        index: Dict[str, Dict[str, object]] = {}
+        for rank, row in enumerate(rows, start=1):
+            index[row["request_id"]] = {
+                "rank": rank,
+                "assignment_time": row["assignment_time"],
+                "completion_time": row["completion_time"],
+                "assigned_staff": row["assigned_staff"],
+            }
+        return index
+
+    compare_df = st.session_state.comparison_df
+    baseline_row = compare_df.iloc[0]
     baseline_match = compare_df[
         (compare_df["scheduler"] == "FCFS")
         & (compare_df["allocator"] == "college_based")
     ]
-    baseline_row = baseline_match.iloc[0] if not baseline_match.empty else compare_df.iloc[0]
+    if not baseline_match.empty:
+        baseline_row = baseline_match.iloc[0]
 
-    compare_df["throughput_delta_pct"] = (
-        ((compare_df["throughput_req_per_day"] / max(float(baseline_row["throughput_req_per_day"]), 1e-6)) - 1.0)
-        * 100.0
-    ).round(2)
-    compare_df["wait_delta_pct"] = (
-        (1.0 - (compare_df["avg_waiting_time_hours"] / max(float(baseline_row["avg_waiting_time_hours"]), 1e-6)))
-        * 100.0
-    ).round(2)
-    compare_df["turnaround_delta_pct"] = (
-        (1.0 - (compare_df["avg_turnaround_days"] / max(float(baseline_row["avg_turnaround_days"]), 1e-6)))
-        * 100.0
-    ).round(2)
-
-    st.markdown("### Comparison Overview")
-    st.markdown(
-        "<div class='comparison-callout'>"
-        "<strong>Baseline:</strong> FCFS + college_based. The cards below show raw metrics plus small percentage chips against that baseline."
-        "</div>",
-        unsafe_allow_html=True,
+    baseline_key = (baseline_row["scheduler"], baseline_row["allocator"])
+    baseline_details = next(
+        (
+            item
+            for item in comparison_details
+            if (item["scheduler"], item["allocator"]) == baseline_key
+        ),
+        None,
     )
 
-    selected_baseline = compare_df[
-        (compare_df["scheduler"] == "FCFS") & (compare_df["allocator"] == "college_based")
-    ]
-    if selected_baseline.empty:
-        selected_baseline = compare_df.iloc[[0]]
+    if baseline_details is None:
+        st.info("Baseline details not available for request-level comparison.")
+    else:
+        baseline_index = _build_request_index(baseline_details["completed_requests"])
+        baseline_requests = set(baseline_index.keys())
 
-    baseline_metrics = selected_baseline.iloc[0]
+        diff_rows = []
+        for item in comparison_details:
+            scheduler = item["scheduler"]
+            allocator = item["allocator"]
+            key = (scheduler, allocator)
+            if key == baseline_key:
+                continue
 
-    def _comparison_variant_card(row: pd.Series, is_baseline: bool = False) -> str:
-        throughput_pct = float(row["throughput_delta_pct"]) if not is_baseline else 0.0
-        wait_pct = float(row["wait_delta_pct"]) if not is_baseline else 0.0
-        turnaround_pct = float(row["turnaround_delta_pct"]) if not is_baseline else 0.0
-        throughput_class = "good" if throughput_pct >= 0 else "warn"
-        wait_class = "good" if wait_pct >= 0 else "warn"
-        turnaround_class = "good" if turnaround_pct >= 0 else "warn"
-        throughput_label = "baseline" if is_baseline else f"{throughput_pct:+.1f}%"
-        wait_label = "baseline" if is_baseline else f"{wait_pct:+.1f}%"
-        turnaround_label = "baseline" if is_baseline else f"{turnaround_pct:+.1f}%"
+            current_index = _build_request_index(item["completed_requests"])
+            current_requests = set(current_index.keys())
+            common = baseline_requests.intersection(current_requests)
 
-        return f"""
-        <div class="comparison-card">
-            <h4>{row['scheduler']} / {row['allocator']}</h4>
-            <div class="meta">Raw metrics plus change vs baseline</div>
-            <div class="comparison-big">
-                <div class="value">{float(row['avg_waiting_time_hours']):.2f}</div>
-                <div class="label">h avg wait</div>
-            </div>
-            <div class="comparison-pill-row">
-                <span class="comparison-pill neutral">{int(row['total_processed'])} processed</span>
-                <span class="comparison-pill neutral">{float(row['avg_turnaround_days']):.2f} d turnaround</span>
-                <span class="comparison-pill neutral">{float(row['throughput_req_per_day']):.2f} req/day</span>
-            </div>
-            <div class="comparison-pill-row" style="margin-top:0.55rem;">
-                <span class="comparison-pill {throughput_class}">Throughput {throughput_label}</span>
-                <span class="comparison-pill {wait_class}">Wait {wait_label}</span>
-                <span class="comparison-pill {turnaround_class}">Turnaround {turnaround_label}</span>
-            </div>
-        </div>
-        """
+            if not common:
+                continue
 
-    st.markdown("<div class='comparison-board'>", unsafe_allow_html=True)
-    st.markdown("<div class='comparison-grid'>", unsafe_allow_html=True)
-    st.markdown(_comparison_variant_card(baseline_metrics, is_baseline=True), unsafe_allow_html=True)
-    for _, row in compare_df.iterrows():
-        if row["scheduler"] == "FCFS" and row["allocator"] == "college_based":
-            continue
-        st.markdown(_comparison_variant_card(row), unsafe_allow_html=True)
-    st.markdown("</div></div>", unsafe_allow_html=True)
+            order_changed = 0
+            staff_changed = 0
+            rank_shift_total = 0.0
+            assign_delta_total = 0.0
+            complete_delta_total = 0.0
+
+            for request_id in common:
+                base = baseline_index[request_id]
+                current = current_index[request_id]
+                if base["rank"] != current["rank"]:
+                    order_changed += 1
+                    rank_shift_total += abs(current["rank"] - base["rank"])
+                if base.get("assigned_staff") != current.get("assigned_staff"):
+                    staff_changed += 1
+
+                base_assign = base.get("assignment_time")
+                current_assign = current.get("assignment_time")
+                if base_assign and current_assign:
+                    assign_delta_total += abs((current_assign - base_assign).total_seconds()) / 60.0
+
+                base_complete = base.get("completion_time")
+                current_complete = current.get("completion_time")
+                if base_complete and current_complete:
+                    complete_delta_total += abs((current_complete - base_complete).total_seconds()) / 60.0
+
+            total_common = len(common)
+            avg_rank_shift = rank_shift_total / max(order_changed, 1)
+            avg_assign_delta = assign_delta_total / total_common
+            avg_complete_delta = complete_delta_total / total_common
+
+            diff_rows.append(
+                {
+                    "scheduler": scheduler,
+                    "allocator": allocator,
+                    "order_changed_count": order_changed,
+                    "order_changed_pct": round((order_changed / total_common) * 100.0, 2),
+                    "avg_abs_rank_shift": round(avg_rank_shift, 2),
+                    "staff_changed_count": staff_changed,
+                    "staff_changed_pct": round((staff_changed / total_common) * 100.0, 2),
+                    "avg_assign_time_delta_min": round(avg_assign_delta, 2),
+                    "avg_complete_time_delta_min": round(avg_complete_delta, 2),
+                }
+            )
+
+        diff_df = pd.DataFrame(diff_rows)
+        if diff_df.empty:
+            st.info("No comparable request-level differences found.")
+        else:
+            raw_variant_options = [
+                (row["scheduler"], row["allocator"]) for row in diff_rows
+            ]
+
+            diff_df = diff_df.rename(
+                columns={
+                    "scheduler": "Scheduler",
+                    "allocator": "Allocator",
+                    "order_changed_count": "Order Changed Count",
+                    "order_changed_pct": "Order Changed %",
+                    "avg_abs_rank_shift": "Avg Abs Rank Shift",
+                    "staff_changed_count": "Staff Changed Count",
+                    "staff_changed_pct": "Staff Changed %",
+                    "avg_assign_time_delta_min": "Avg Assign Delta (min)",
+                    "avg_complete_time_delta_min": "Avg Complete Delta (min)",
+                }
+            )
+            diff_df["Scheduler"] = diff_df["Scheduler"].map(
+                lambda s: SCHEDULER_LABELS.get(s, str(s))
+            )
+            diff_df["Allocator"] = diff_df["Allocator"].map(
+                lambda a: ALLOCATOR_LABELS.get(a, str(a).replace("_", " ").title())
+            )
+
+            render_theme_table(diff_df, height_px=320)
+
+            fig_diff = go.Figure()
+            fig_diff.add_trace(
+                go.Bar(
+                    name="Order Changed %",
+                    x=diff_df["Allocator"],
+                    y=diff_df["Order Changed %"],
+                    marker_color="#a855f7",
+                )
+            )
+            fig_diff.add_trace(
+                go.Bar(
+                    name="Staff Changed %",
+                    x=diff_df["Allocator"],
+                    y=diff_df["Staff Changed %"],
+                    marker_color="#22d3ee",
+                    text=diff_df["Staff Changed %"].apply(lambda v: f"{v:.1f}%"),
+                )
+            )
+            fig_diff.update_layout(
+                title="Request-Level Changes vs Baseline",
+                xaxis_title="Allocator",
+                yaxis_title="Percent of Requests",
+                barmode="group",
+                height=320,
+            )
+            apply_plot_theme(fig_diff)
+            st.plotly_chart(fig_diff, use_container_width=True)
+
+            selected_variant = st.selectbox(
+                "Inspect Variant",
+                options=raw_variant_options,
+                format_func=lambda v: f"{SCHEDULER_LABELS.get(v[0], v[0])} | {ALLOCATOR_LABELS.get(v[1], v[1].replace('_', ' ').title())}",
+                index=0,
+            )
+
+            if selected_variant:
+                selected_sched, selected_alloc = selected_variant
+                selected_detail = next(
+                    (
+                        item
+                        for item in comparison_details
+                        if item["scheduler"] == selected_sched
+                        and item["allocator"] == selected_alloc
+                    ),
+                    None,
+                )
+                if selected_detail:
+                    current_index = _build_request_index(
+                        selected_detail["completed_requests"]
+                    )
+                    change_rows = []
+                    for request_id in baseline_requests.intersection(current_index.keys()):
+                        base = baseline_index[request_id]
+                        current = current_index[request_id]
+                        rank_shift = current["rank"] - base["rank"]
+                        base_assign = base.get("assignment_time")
+                        current_assign = current.get("assignment_time")
+                        assign_delta = None
+                        if base_assign and current_assign:
+                            assign_delta = round(
+                                (current_assign - base_assign).total_seconds() / 60.0, 2
+                            )
+                        change_rows.append(
+                            {
+                                "Request": request_id,
+                                "Rank Shift": rank_shift,
+                                "Assigned Staff": current.get("assigned_staff"),
+                                "Staff Changed": base.get("assigned_staff")
+                                != current.get("assigned_staff"),
+                                "Assign Delta (min)": assign_delta,
+                            }
+                        )
+
+                    change_df = pd.DataFrame(change_rows)
+                    change_df["_abs_shift"] = change_df["Rank Shift"].abs()
+                    change_df = change_df.sort_values(
+                        by=["_abs_shift", "Request"], ascending=[False, True]
+                    ).drop(columns=["_abs_shift"])
+                    render_theme_table(change_df.head(25), height_px=320)
 
 
 # ============================================================================
@@ -2231,7 +2858,7 @@ if engine.completed:
                 "submission_time": req.submission_time.isoformat(),
                 "assignment_time": req.assignment_time.isoformat() if req.assignment_time else None,
                 "completion_time": req.completion_time.isoformat() if req.completion_time else None,
-                "queue_wait_hours": round(req.get_waiting_time_minutes() / 60.0, 4),
+                "queue_wait_hours": round(req.get_waiting_time_minutes() or 0.0 / 60.0, 4),
                 "turnaround_days": round(req.get_turnaround_time_minutes() / 1440.0, 4),
                 "assigned_staff": req.assigned_staff,
             }
@@ -2267,4 +2894,3 @@ if st.session_state.last_run_config:
         mime="application/json",
         use_container_width=True,
     )
-

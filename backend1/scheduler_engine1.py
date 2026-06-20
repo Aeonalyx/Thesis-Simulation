@@ -200,6 +200,7 @@ class DocumentRequest:
     assignment_time: Optional[datetime] = None
     completion_time: Optional[datetime] = None
     assigned_staff: Optional[str] = None
+    is_custom: bool = False
 
     def calculate_priority(
         self,
@@ -276,9 +277,9 @@ class DocumentRequest:
         self.completeness_of_requirements = float(COMPLETENESS_LEVELS.get(stage, 1.0))
         self.payment_status = self._payment_status_at(current_time)
 
-    def get_waiting_time_minutes(self) -> float:
+    def get_waiting_time_minutes(self) -> Optional[float]:
         if self.assignment_time is None:
-            return 0.0
+            return None
         return (self.assignment_time - self.submission_time).total_seconds() / 60.0
 
     def get_turnaround_time_minutes(self) -> float:
@@ -293,7 +294,6 @@ class DocumentRequest:
             "document_type": self.document_type,
             "urgency": self.urgency,
             "requester_type": self.requester_type,
-            "requester_status": self.requester_type,
             "completeness_of_requirements": round(float(self.completeness_of_requirements), 4),
             "requirements_stage": self.requirements_stage,
             "payment_status": self.payment_status,
@@ -310,6 +310,7 @@ class DocumentRequest:
             "assignment_time": self.assignment_time.isoformat() if self.assignment_time else None,
             "completion_time": self.completion_time.isoformat() if self.completion_time else None,
             "assigned_staff": self.assigned_staff,
+            "is_custom": self.is_custom,
         }
 
 
@@ -570,8 +571,7 @@ class SimulationEngine:
             "Karla",
         ]
 
-        max_staff = max(len(COLLEGES) * 2, 1)
-        count = max(1, min(int(num_staff), max_staff))
+        count = max(1, int(num_staff))
         quota = max(1, int(quota_limit))
 
         pool = []
@@ -602,13 +602,13 @@ class SimulationEngine:
     def _scenario_defaults(self, scenario: str) -> Dict:
         defaults = {
             "baseline": {
-                "total_requests": 200,
+                "total_requests": 100,
                 "urgency_base": 5,
                 "imbalance_factor": 0,
                 "num_absent_staff": 0,
             },
             "peak_period": {
-                "total_requests": 400,
+                "total_requests": 300,
                 "urgency_base": 5,
                 "imbalance_factor": 0,
                 "num_absent_staff": 0,
@@ -1028,7 +1028,7 @@ class SimulationEngine:
             DOCUMENT_COMPLEXITY.get(request.document_type, 1)
         )
         if use_work_hours:
-            per_request_rng = random.Random(f"{self.random_seed}:{request.request_id}:proc")
+            per_request_rng = random.Random(hash((self.random_seed, request.request_id)))
             multiplier = per_request_rng.uniform(0.8, 1.2)
         else:
             multiplier = 1.0
@@ -1057,7 +1057,10 @@ class SimulationEngine:
         staff.increment_day_quota(assignment_time.date())
 
         # Assignment availability is not completion-blocked in current intake model.
-        staff.next_available_time = assignment_time
+        if self.allocator_type == "quota_free":
+            staff.next_available_time = completion_time
+        else:
+            staff.next_available_time = assignment_time
 
         self.completed.append(request)
 
@@ -1102,16 +1105,14 @@ class SimulationEngine:
             while index < len(arrivals) and arrivals[index].submission_time <= current_time:
                 req = arrivals[index]
                 self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_arrived")
-                if self._is_request_ready(req, current_time):
-                    pending.append(req)
-                else:
-                    not_ready.append(req)
-                    self._log_event(
-                        req.submission_time,
-                        "WAITING",
-                        request=req,
-                        details="pending_requirements_or_payment",
-                    )
+                
+                not_ready.append(req)
+                self._log_event(
+                    req.submission_time,
+                    "WAITING",
+                    request=req,
+                    details="pending_requirements_or_payment",
+                )
                 index += 1
 
             ready_now = [req for req in not_ready if self._is_request_ready(req, current_time)]
@@ -1173,17 +1174,14 @@ class SimulationEngine:
             while index < len(arrivals) and arrivals[index].submission_time <= current_time:
                 req = arrivals[index]
                 self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_arrived")
-                if self._is_request_ready(req, current_time):
-                    pending.append(req)
-                    self.scheduler.add_request(req)
-                else:
-                    not_ready.append(req)
-                    self._log_event(
-                        req.submission_time,
-                        "WAITING",
-                        request=req,
-                        details="pending_requirements_or_payment",
-                    )
+                
+                not_ready.append(req)
+                self._log_event(
+                    req.submission_time,
+                    "WAITING",
+                    request=req,
+                    details="pending_requirements_or_payment",
+                )
                 index += 1
 
             ready_now = [req for req in not_ready if self._is_request_ready(req, current_time)]
@@ -1299,9 +1297,16 @@ class SimulationEngine:
                 "total_processed": 0,
                 "staff_load": {staff.staff_id: 0 for staff in self.staff_pool},
                 "scenario": self.scenario,
+                "custom_metrics": {"avg_waiting_time_hours": 0.0, "avg_turnaround_days": 0.0, "total_processed": 0},
+                "generated_metrics": {"avg_waiting_time_hours": 0.0, "avg_turnaround_days": 0.0, "total_processed": 0},
             }
 
-        waiting_hours = [req.get_waiting_time_minutes() / 60.0 for req in self.completed]
+        waiting_hours = [
+            w / 60.0
+            for req in self.completed
+            if (w := req.get_waiting_time_minutes()) is not None
+        ]
+
         turnaround_days = [req.get_turnaround_time_minutes() / 1440.0 for req in self.completed]
 
         first_submission = min(req.submission_time for req in self.completed)
@@ -1315,25 +1320,148 @@ class SimulationEngine:
             if req.assigned_staff in staff_load:
                 staff_load[req.assigned_staff] += 1
 
+        # Calculate metrics for custom vs generated requests
+        completed_custom = [req for req in self.completed if req.is_custom]
+        completed_gen = [req for req in self.completed if not req.is_custom]
+
+        custom_waiting = [w / 60.0 for req in completed_custom if (w := req.get_waiting_time_minutes()) is not None]
+        custom_turnaround = [req.get_turnaround_time_minutes() / 1440.0 for req in completed_custom]
+
+        gen_waiting = [w / 60.0 for req in completed_gen if (w := req.get_waiting_time_minutes()) is not None]
+        gen_turnaround = [req.get_turnaround_time_minutes() / 1440.0 for req in completed_gen]
+
         return {
-            "avg_waiting_time_hours": round(sum(waiting_hours) / len(waiting_hours), 2),
-            "avg_turnaround_days": round(sum(turnaround_days) / len(turnaround_days), 2),
+            "avg_waiting_time_hours": round(sum(waiting_hours) / len(waiting_hours), 2) if waiting_hours else 0.0,
+            "avg_turnaround_days": round(sum(turnaround_days) / len(turnaround_days), 2) if turnaround_days else 0.0,
             "total_days_elapsed": round(total_days_elapsed, 2),
             "throughput_req_per_day": round(throughput, 2),
             "total_processed": len(self.completed),
             "staff_load": staff_load,
             "scenario": self.scenario,
+            "custom_metrics": {
+                "avg_waiting_time_hours": round(sum(custom_waiting) / len(custom_waiting), 2) if custom_waiting else 0.0,
+                "avg_turnaround_days": round(sum(custom_turnaround) / len(custom_turnaround), 2) if custom_turnaround else 0.0,
+                "total_processed": len(completed_custom)
+            },
+            "generated_metrics": {
+                "avg_waiting_time_hours": round(sum(gen_waiting) / len(gen_waiting), 2) if gen_waiting else 0.0,
+                "avg_turnaround_days": round(sum(gen_turnaround) / len(gen_turnaround), 2) if gen_turnaround else 0.0,
+                "total_processed": len(completed_gen)
+            }
         }
 
     def run(self, custom_config: Optional[Dict] = None) -> Dict:
         config = self._build_run_config(custom_config)
         self.scenario = config["scenario"]
 
-        self.start_time = self._default_day_start(datetime.now())
+        self.start_time = self._day_start(datetime.now().date())
         self._reset_for_run()
         self._apply_staff_absence(config["num_absent_staff"])
 
-        requests = self._generate_requests(config)
+        # Check if generated requests should be disabled
+        disable_generated_requests = config.get("disable_generated_requests", False)
+        if disable_generated_requests:
+            requests = []
+        else:
+            requests = self._generate_requests(config)
+
+        # Load custom requests from SQLite database
+        custom_requests = []
+        try:
+            import sqlite3
+            import os
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(base_dir, 'custom_requests.db')
+            if os.path.exists(db_path):
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM custom_requests")
+                rows = cursor.fetchall()
+                conn.close()
+
+                sim_date = self.start_time.date()
+
+                def align_to_sim_date(time_str_val):
+                    if not time_str_val:
+                        return None
+                    time_str = str(time_str_val).strip()
+                    if re.match(r'^\d{2}:\d{2}(:\d{2})?$', time_str):
+                        parts = time_str.split(':')
+                        h = int(parts[0])
+                        m = int(parts[1])
+                        s = int(parts[2]) if len(parts) > 2 else 0
+                        return datetime.combine(sim_date, datetime.min.time().replace(hour=h, minute=m, second=s))
+                    try:
+                        dt = datetime.fromisoformat(time_str)
+                        return datetime.combine(sim_date, dt.time())
+                    except Exception:
+                        try:
+                            t = datetime.strptime(time_str, "%H:%M").time()
+                            return datetime.combine(sim_date, t)
+                        except Exception:
+                            return None
+
+                for row in rows:
+                    rid = row['request_id']
+                    college = row['college']
+                    doc_type = row['document_type']
+                    urgency = int(row['urgency'])
+                    req_type = row['requester_type']
+
+                    # Parse all times and force alignment to the simulation start date
+                    sub_time = align_to_sim_date(row['submission_time']) or self.start_time
+                    req_partial = align_to_sim_date(row['requirements_partial_time'])
+                    req_complete = align_to_sim_date(row['requirements_complete_time'])
+                    pay_time = align_to_sim_date(row['payment_time'])
+                    rdy_time = align_to_sim_date(row['ready_time'])
+
+                    req_stage = row['requirements_stage'] or 'complete'
+                    pay_status = row['payment_status'] or 'Paid'
+                    completeness = float(row['completeness_of_requirements'] or 1.0)
+
+                    # Defaults for times if not provided
+                    if req_partial is None:
+                        req_partial = sub_time
+                    if req_complete is None:
+                        if req_stage == 'complete':
+                            req_complete = sub_time
+                        elif req_stage == 'partial':
+                            req_complete = sub_time + timedelta(hours=1)
+                        else:
+                            req_complete = sub_time + timedelta(hours=2)
+
+                    if pay_time is None:
+                        if pay_status == 'Paid':
+                            pay_time = sub_time
+                        else:
+                            pay_time = sub_time + timedelta(hours=2)
+
+                    if rdy_time is None:
+                        rdy_time = max(req_complete, pay_time)
+
+                    doc_req = DocumentRequest(
+                        request_id=rid,
+                        college=college,
+                        document_type=doc_type,
+                        urgency=urgency,
+                        requester_type=req_type,
+                        submission_time=sub_time,
+                        completeness_of_requirements=completeness,
+                        payment_status=pay_status,
+                        requirements_stage=req_stage,
+                        requirements_partial_time=req_partial,
+                        requirements_complete_time=req_complete,
+                        payment_time=pay_time,
+                        ready_time=rdy_time,
+                        is_custom=True
+                    )
+                    doc_req.update_status(sub_time)
+                    custom_requests.append(doc_req)
+        except Exception as db_err:
+            print("Error loading custom requests from database:", db_err)
+
+        requests.extend(custom_requests)
         self.generated_requests = requests
 
         if self.scheduler_type == "FCFS":
