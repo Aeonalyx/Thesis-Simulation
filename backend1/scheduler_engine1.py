@@ -351,7 +351,7 @@ class FCFSScheduler:
         self.queue.append(request)
 
     def get_all_sorted(self) -> List[DocumentRequest]:
-        sorted_queue = sorted(self.queue, key=lambda r: r.submission_time)
+        sorted_queue = sorted(self.queue, key=lambda r: (r.submission_time, r.request_id))
         self.queue.clear()
         return sorted_queue
 
@@ -375,7 +375,7 @@ class WeightedPriorityScheduler:
     ) -> List[DocumentRequest]:
         for req in self.pending:
             req.calculate_priority(current_time, weights, workday_minutes, urgency)
-        return sorted(self.pending, key=lambda r: (-r.priority_score, r.submission_time))
+        return sorted(self.pending, key=lambda r: (-r.priority_score, r.submission_time, r.request_id))
 
 
 # ============================================================================
@@ -647,6 +647,22 @@ class SimulationEngine:
         merged["imbalance_factor"] = max(0, min(100, int(merged.get("imbalance_factor", 0))))
         merged["num_absent_staff"] = max(0, int(merged.get("num_absent_staff", 0)))
         merged["scenario"] = scenario
+        merged["align_custom_dates"] = bool(incoming.get("align_custom_dates", False))
+        merged["custom_requests"] = incoming.get("custom_requests", None)
+        
+        # Parse simulation start date if configured
+        sim_start_str = incoming.get("sim_start_date")
+        if sim_start_str:
+            try:
+                if 'T' in sim_start_str:
+                    merged["sim_start_date"] = datetime.fromisoformat(sim_start_str).date()
+                else:
+                    merged["sim_start_date"] = datetime.strptime(sim_start_str.strip(), "%Y-%m-%d").date()
+            except Exception:
+                merged["sim_start_date"] = datetime.now().date()
+        else:
+            merged["sim_start_date"] = datetime.now().date()
+            
         return merged
 
     def _apply_staff_absence(self, num_absent_staff: int):
@@ -723,7 +739,9 @@ class SimulationEngine:
             nonlocal request_counter
             for _ in range(count):
                 submission_offset_hours = self.rng.uniform(hour_min, hour_max)
-                submission_time = self.start_time + timedelta(hours=submission_offset_hours)
+                # Align with midnight of the self.start_time date to prevent Day 1 vs Day 2 mismatch
+                sim_date = self.start_time.date()
+                submission_time = datetime.combine(sim_date, datetime.min.time()) + timedelta(hours=submission_offset_hours)
                 college = self.rng.choices(colleges, weights=weights, k=1)[0]
                 document_type = self.rng.choices(document_types, weights=doc_weights, k=1)[0]
                 allowed_requesters = DOCUMENT_REQUESTER_RESTRICTIONS.get(document_type)
@@ -1089,7 +1107,7 @@ class SimulationEngine:
     # ---------------------------------------------------------------------
 
     def _run_fcfs(self, requests: List[DocumentRequest]):
-        arrivals = sorted(requests, key=lambda r: r.submission_time)
+        arrivals = sorted(requests, key=lambda r: (r.submission_time, r.request_id))
         pending: List[DocumentRequest] = []
         not_ready: List[DocumentRequest] = []
         index = 0
@@ -1135,7 +1153,7 @@ class SimulationEngine:
 
             next_req = min(
                 pending,
-                key=lambda r: (r.submission_time, r.ready_time or r.submission_time),
+                key=lambda r: (r.submission_time, r.ready_time or r.submission_time, r.request_id),
             )
             pending.remove(next_req)
             reference_time = max(current_time, next_req.ready_time or next_req.submission_time)
@@ -1155,7 +1173,7 @@ class SimulationEngine:
             current_time = max(current_time, assignment_time)
 
     def _run_weighted(self, requests: List[DocumentRequest]):
-        arrivals = sorted(requests, key=lambda r: r.submission_time)
+        arrivals = sorted(requests, key=lambda r: (r.submission_time, r.request_id))
         pending: List[DocumentRequest] = []
         not_ready: List[DocumentRequest] = []
         index = 0
@@ -1354,7 +1372,8 @@ class SimulationEngine:
         config = self._build_run_config(custom_config)
         self.scenario = config["scenario"]
 
-        self.start_time = self._day_start(datetime.now().date())
+        sim_date = config.get("sim_start_date", datetime.now().date())
+        self.start_time = self._day_start(sim_date)
         self._reset_for_run()
         self._apply_staff_absence(config["num_absent_staff"])
 
@@ -1365,62 +1384,97 @@ class SimulationEngine:
         else:
             requests = self._generate_requests(config)
 
-        # Load custom requests from SQLite database
+        # Load custom requests (from payload config or SQLite database)
         custom_requests = []
-        try:
-            import sqlite3
-            import os
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            db_path = os.path.join(base_dir, 'custom_requests.db')
-            if os.path.exists(db_path):
-                conn = sqlite3.connect(db_path)
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM custom_requests")
-                rows = cursor.fetchall()
-                conn.close()
+        custom_rows = []
+        
+        # Check payload first
+        payload_custom = config.get("custom_requests")
+        if isinstance(payload_custom, list):
+            custom_rows = payload_custom
+        else:
+            # Fallback to database
+            try:
+                import sqlite3
+                import os
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                db_path = os.path.join(base_dir, 'custom_requests.db')
+                if os.path.exists(db_path):
+                    conn = sqlite3.connect(db_path)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT * FROM custom_requests")
+                    rows = cursor.fetchall()
+                    conn.close()
+                    custom_rows = [dict(row) for row in rows]
+            except Exception as db_err:
+                print("Error loading custom requests from database:", db_err)
 
-                sim_date = self.start_time.date()
+        if custom_rows:
+            try:
+                align_custom_dates = config.get("align_custom_dates", False)
 
-                def align_to_sim_date(time_str_val):
+                def align_to_sim_date(time_str_val, align_custom_dates=False):
                     if not time_str_val:
                         return None
+                    if isinstance(time_str_val, datetime):
+                        if align_custom_dates:
+                            return datetime.combine(sim_date, time_str_val.time())
+                        return time_str_val
                     time_str = str(time_str_val).strip()
+                    
+                    is_just_time = False
                     if re.match(r'^\d{2}:\d{2}(:\d{2})?$', time_str):
+                        is_just_time = True
+                    else:
+                        try:
+                            datetime.strptime(time_str, "%H:%M")
+                            is_just_time = True
+                        except Exception:
+                            pass
+                            
+                    if is_just_time:
                         parts = time_str.split(':')
                         h = int(parts[0])
                         m = int(parts[1])
                         s = int(parts[2]) if len(parts) > 2 else 0
                         return datetime.combine(sim_date, datetime.min.time().replace(hour=h, minute=m, second=s))
+                    
                     try:
                         dt = datetime.fromisoformat(time_str)
-                        return datetime.combine(sim_date, dt.time())
+                        if align_custom_dates:
+                            return datetime.combine(sim_date, dt.time())
+                        return dt
                     except Exception:
                         try:
-                            t = datetime.strptime(time_str, "%H:%M").time()
-                            return datetime.combine(sim_date, t)
+                            dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
+                            if align_custom_dates:
+                                return datetime.combine(sim_date, dt.time())
+                            return dt
                         except Exception:
-                            return None
+                            try:
+                                t = datetime.strptime(time_str, "%H:%M").time()
+                                return datetime.combine(sim_date, t)
+                            except Exception:
+                                return None
 
-                for row in rows:
-                    rid = row['request_id']
-                    college = row['college']
-                    doc_type = row['document_type']
-                    urgency = int(row['urgency'])
-                    req_type = row['requester_type']
+                for row in custom_rows:
+                    rid = row.get('request_id') or f"CUST{self.rng.randint(1000, 9999)}"
+                    college = row.get('college')
+                    doc_type = row.get('document_type')
+                    urgency = int(row.get('urgency', 5))
+                    req_type = row.get('requester_type')
 
-                    # Parse all times and force alignment to the simulation start date
-                    sub_time = align_to_sim_date(row['submission_time']) or self.start_time
-                    req_partial = align_to_sim_date(row['requirements_partial_time'])
-                    req_complete = align_to_sim_date(row['requirements_complete_time'])
-                    pay_time = align_to_sim_date(row['payment_time'])
-                    rdy_time = align_to_sim_date(row['ready_time'])
+                    sub_time = align_to_sim_date(row.get('submission_time'), align_custom_dates) or self.start_time
+                    req_partial = align_to_sim_date(row.get('requirements_partial_time'), align_custom_dates)
+                    req_complete = align_to_sim_date(row.get('requirements_complete_time'), align_custom_dates)
+                    pay_time = align_to_sim_date(row.get('payment_time'), align_custom_dates)
+                    rdy_time = align_to_sim_date(row.get('ready_time'), align_custom_dates)
 
-                    req_stage = row['requirements_stage'] or 'complete'
-                    pay_status = row['payment_status'] or 'Paid'
-                    completeness = float(row['completeness_of_requirements'] or 1.0)
+                    req_stage = row.get('requirements_stage') or 'complete'
+                    pay_status = row.get('payment_status') or 'Paid'
+                    completeness = float(row.get('completeness_of_requirements') or 1.0)
 
-                    # Defaults for times if not provided
                     if req_partial is None:
                         req_partial = sub_time
                     if req_complete is None:
@@ -1458,8 +1512,8 @@ class SimulationEngine:
                     )
                     doc_req.update_status(sub_time)
                     custom_requests.append(doc_req)
-        except Exception as db_err:
-            print("Error loading custom requests from database:", db_err)
+            except Exception as parse_err:
+                print("Error parsing custom requests:", parse_err)
 
         requests.extend(custom_requests)
         self.generated_requests = requests

@@ -182,6 +182,9 @@ def run_simulation():
             "imbalance_factor": imbalance_factor,
             "num_absent_staff": num_absent_staff,
             "disable_generated_requests": disable_generated_requests,
+            "sim_start_date": data.get("sim_start_date"),
+            "align_custom_dates": data.get("align_custom_dates", False),
+            "custom_requests": data.get("custom_requests"),
         })
 
         staff_info = get_staff_info(engine)
@@ -305,6 +308,9 @@ def compare_allocators():
                 "imbalance_factor": imbalance_factor,
                 "num_absent_staff": num_absent_staff,
                 "disable_generated_requests": disable_generated_requests,
+                "sim_start_date": data.get("sim_start_date"),
+                "align_custom_dates": data.get("align_custom_dates", False),
+                "custom_requests": data.get("custom_requests"),
             })
             staff_info = get_staff_info(engine)
             results[allocator] = {
@@ -361,38 +367,47 @@ def get_custom_requests_endpoint():
         return jsonify({"error": str(e)}), 500
 
 
+def validate_custom_request(req_data):
+    college = req_data.get('college')
+    document_type = req_data.get('document_type')
+    urgency = req_data.get('urgency')
+    requester_type = req_data.get('requester_type')
+    submission_time = req_data.get('submission_time')
+    
+    if not all([college, document_type, urgency, requester_type, submission_time]):
+        return False, "Missing required fields (college, document_type, urgency, requester_type, submission_time)"
+        
+    if college not in COLLEGES:
+        return False, f"Invalid college: {college}. Must be one of {COLLEGES}"
+        
+    if document_type not in DOCUMENT_COMPLEXITY:
+        return False, f"Invalid document_type: {document_type}. Must be one of {list(DOCUMENT_COMPLEXITY.keys())}"
+        
+    try:
+        urg_val = int(urgency)
+        if not (1 <= urg_val <= 10):
+            return False, "Urgency must be an integer between 1 and 10"
+    except ValueError:
+        return False, "Urgency must be an integer between 1 and 10"
+        
+    return True, None
+
+
 @app.route('/api/custom-requests', methods=['POST'])
 def add_custom_request_endpoint():
-    """Add a custom request to database"""
+    """Add a custom request or bulk requests to database"""
     try:
         data = request.get_json() or {}
         
-        college = data.get('college')
-        document_type = data.get('document_type')
-        urgency = data.get('urgency')
-        requester_type = data.get('requester_type')
-        submission_time = data.get('submission_time')
+        # Check if single object or array
+        is_bulk = isinstance(data, list)
+        items = data if is_bulk else [data]
         
-        # Validation
-        if not all([college, document_type, urgency, requester_type, submission_time]):
-            return jsonify({"error": "Missing required fields (college, document_type, urgency, requester_type, submission_time)"}), 400
-            
-        if college not in COLLEGES:
-            return jsonify({"error": f"Invalid college: {college}. Must be one of {COLLEGES}"}), 400
-            
-        if document_type not in DOCUMENT_COMPLEXITY:
-            return jsonify({"error": f"Invalid document_type: {document_type}. Must be one of {list(DOCUMENT_COMPLEXITY.keys())}"}), 400
-            
-        try:
-            urgency = int(urgency)
-            if not (1 <= urgency <= 10):
-                raise ValueError()
-        except ValueError:
-            return jsonify({"error": "Urgency must be an integer between 1 and 10"}), 400
-
-        # Generate request ID
+        # Connect to DB to get current max ID and insert
         conn = get_db_connection()
         cursor = conn.cursor()
+        
+        # Get current max CUST number
         cursor.execute("SELECT request_id FROM custom_requests WHERE request_id LIKE 'CUST%'")
         rows = cursor.fetchall()
         max_num = 0
@@ -404,36 +419,83 @@ def add_custom_request_endpoint():
                     max_num = num
             except ValueError:
                 pass
-        request_id = f"CUST{max_num + 1:04d}"
+                
+        successes = 0
+        failures = 0
+        inserted_ids = []
+        errors = []
         
-        completeness = float(data.get('completeness_of_requirements', 1.0))
-        payment_status = data.get('payment_status', 'Paid')
-        requirements_stage = data.get('requirements_stage', 'complete')
-        
-        req_partial = data.get('requirements_partial_time')
-        req_complete = data.get('requirements_complete_time')
-        payment_time = data.get('payment_time')
-        ready_time = data.get('ready_time')
-
-        cursor.execute('''
-            INSERT INTO custom_requests (
-                request_id, college, document_type, urgency, requester_type, submission_time,
-                completeness_of_requirements, payment_status, requirements_stage,
-                requirements_partial_time, requirements_complete_time, payment_time, ready_time
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            request_id, college, document_type, urgency, requester_type, submission_time,
-            completeness, payment_status, requirements_stage,
-            req_partial, req_complete, payment_time, ready_time
-        ))
+        for idx, item in enumerate(items):
+            is_valid, err_msg = validate_custom_request(item)
+            if not is_valid:
+                failures += 1
+                errors.append({"index": idx, "error": err_msg})
+                continue
+                
+            # Valid request, let's insert it
+            max_num += 1
+            request_id = f"CUST{max_num:04d}"
+            
+            college = item.get('college')
+            document_type = item.get('document_type')
+            urgency = int(item.get('urgency'))
+            requester_type = item.get('requester_type')
+            submission_time = item.get('submission_time')
+            
+            completeness = float(item.get('completeness_of_requirements', 1.0))
+            payment_status = item.get('payment_status', 'Paid')
+            requirements_stage = item.get('requirements_stage', 'complete')
+            
+            req_partial = item.get('requirements_partial_time')
+            req_complete = item.get('requirements_complete_time')
+            payment_time = item.get('payment_time')
+            ready_time = item.get('ready_time')
+            
+            try:
+                cursor.execute('''
+                    INSERT INTO custom_requests (
+                        request_id, college, document_type, urgency, requester_type, submission_time,
+                        completeness_of_requirements, payment_status, requirements_stage,
+                        requirements_partial_time, requirements_complete_time, payment_time, ready_time
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    request_id, college, document_type, urgency, requester_type, submission_time,
+                    completeness, payment_status, requirements_stage,
+                    req_partial, req_complete, payment_time, ready_time
+                ))
+                successes += 1
+                inserted_ids.append(request_id)
+            except Exception as insert_err:
+                failures += 1
+                errors.append({"index": idx, "error": str(insert_err)})
+                max_num -= 1 # Rollback max_num increment since insert failed
+                
         conn.commit()
         conn.close()
         
-        return jsonify({
-            "success": True, 
-            "message": "Custom request added successfully",
-            "request_id": request_id
-        }), 201
+        response_data = {
+            "totals": len(items),
+            "successes": successes,
+            "failures": failures,
+            "request_ids": inserted_ids
+        }
+        if errors:
+            response_data["errors"] = errors
+            
+        if not is_bulk:
+            # Single request format (backward-compatible)
+            if successes == 1:
+                response_data["success"] = True
+                response_data["message"] = "Custom request added successfully"
+                response_data["request_id"] = inserted_ids[0]
+                return jsonify(response_data), 201
+            else:
+                return jsonify({"error": errors[0]["error"]}), 400
+        else:
+            # Bulk request format
+            status_code = 201 if successes > 0 else 400
+            return jsonify(response_data), status_code
+            
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -486,21 +548,21 @@ def server_error(error):
 
 if __name__ == '__main__':
     print("""
-    ═══════════════════════════════════════════════════════════════════
-    🎓 Thesis Simulation Backend API
-    ═══════════════════════════════════════════════════════════════════
+    ===================================================================
+    Thesis Simulation Backend API
+    ===================================================================
     
     Server running on: http://localhost:5000
     
     Available endpoints:
-    • GET  http://localhost:5000/health          - Health check
-    • GET  http://localhost:5000/config          - Configuration
-    • GET  http://localhost:5000/api/info        - API documentation
-    • POST http://localhost:5000/simulate        - Run simulation
-    • POST http://localhost:5000/simulate/quick  - Quick baseline
-    • POST http://localhost:5000/simulate/compare - Compare allocators
+    * GET  http://localhost:5000/health          - Health check
+    * GET  http://localhost:5000/config          - Configuration
+    * GET  http://localhost:5000/api/info        - API documentation
+    * POST http://localhost:5000/simulate        - Run simulation
+    * POST http://localhost:5000/simulate/quick  - Quick baseline
+    * POST http://localhost:5000/simulate/compare - Compare allocators
     
-    ═══════════════════════════════════════════════════════════════════
+    ===================================================================
     """)
     
     app.run(

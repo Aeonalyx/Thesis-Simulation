@@ -699,16 +699,25 @@ def run_simulation_now():
                 except Exception:
                     mock_engine.workday_minutes = 9 * 60
                 try:
+                    run_config = results.get("run_config", {})
+                    sim_start_date_str = run_config.get("sim_start_date")
+                    if sim_start_date_str:
+                        sim_date = datetime.fromisoformat(sim_start_date_str).date()
+                    else:
+                        reqs = results.get("completed_requests", [])
+                        if reqs and reqs[0].get("submission_time"):
+                            sim_date = datetime.fromisoformat(reqs[0]["submission_time"]).date()
+                        else:
+                            sim_date = datetime.now().date()
+                except Exception:
+                    sim_date = datetime.now().date()
+
+                try:
                     start_str = work_hours.get("start", "08:00")
                     start_time_obj = datetime.strptime(start_str, "%H:%M").time()
-                    mock_engine.start_time = datetime.now().replace(
-                        hour=start_time_obj.hour,
-                        minute=start_time_obj.minute,
-                        second=0,
-                        microsecond=0,
-                    )
+                    mock_engine.start_time = datetime.combine(sim_date, start_time_obj)
                 except Exception:
-                    mock_engine.start_time = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)
+                    mock_engine.start_time = datetime.combine(sim_date, time(8, 0))
                     
                 st.session_state.simulation_engine = mock_engine
                 st.session_state.simulation_results = results
@@ -1453,7 +1462,7 @@ with st.sidebar.expander("🛠️ Custom Request Manager", expanded=False):
             except Exception as e:
                 st.sidebar.error(f"Error: {e}")
     else:
-        st.sidebar.info("No custom requests in the database. Add one above or via API.")
+        st.sidebar.info("No custom requests in the database. Add one above or via API. http://localhost:5000/api/custom-requests")
 # 🔍 DEBUG: Urgency Toggle Verification
 if st.session_state.simulation_engine is not None:
     with st.sidebar.expander("🐛 Debug: Urgency Status", expanded=False):
