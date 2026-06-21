@@ -468,7 +468,10 @@ class SimulationEngine:
     def _day_start(self, day: date) -> datetime:
         h = self.work_start_minutes // 60
         m = self.work_start_minutes % 60
-        return datetime.combine(day, datetime.min.time()).replace(hour=h, minute=m)
+        dt = datetime.combine(day, datetime.min.time()).replace(hour=h, minute=m)
+        if dt.tzinfo is not None:
+            dt = dt.replace(tzinfo=None)
+        return dt
 
     def _day_end(self, day: date) -> datetime:
         h = self.work_end_minutes // 60
@@ -806,6 +809,8 @@ class SimulationEngine:
                 sub_time = self.start_time.replace(hour=h, minute=m, second=0, microsecond=0)
         except Exception:
             sub_time = self.start_time.replace(hour=8, minute=0)
+        if sub_time.tzinfo is not None:
+            sub_time = sub_time.replace(tzinfo=None)
             
         # Parse completeness
         comp_raw = data.get("completeness", "complete")
@@ -1420,6 +1425,9 @@ class SimulationEngine:
         self.scenario = config["scenario"]
 
         self.start_time = self._day_start(datetime.now().date())
+        if self.start_time.tzinfo is not None:
+            self.start_time = self.start_time.replace(tzinfo=None)
+        
         self._reset_for_run()
         self._apply_staff_absence(config["num_absent_staff"])
 
