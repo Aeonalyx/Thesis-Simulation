@@ -733,10 +733,8 @@ class SimulationEngine:
             return int(round(max(1, min(10, value))))
 
         requests: List[DocumentRequest] = []
-        request_counter = 1
 
         def _add_batch(count: int, hour_min: float, hour_max: float):
-            nonlocal request_counter
             for _ in range(count):
                 submission_offset_hours = self.rng.uniform(hour_min, hour_max)
                 # Align with midnight of the self.start_time date to prevent Day 1 vs Day 2 mismatch
@@ -770,8 +768,10 @@ class SimulationEngine:
                     ready_time = requirements_complete_time
                     payment_status = "Paid"
 
+                # Use a temporary placeholder ID; final sequential IDs are assigned
+                # below after sorting all requests by submission_time.
                 request = DocumentRequest(
-                    request_id=f"REQ{request_counter:04d}",
+                    request_id="",
                     college=college,
                     document_type=document_type,
                     urgency=_next_urgency(),
@@ -785,11 +785,16 @@ class SimulationEngine:
                 )
                 request.update_status(submission_time)
                 requests.append(request)
-                request_counter += 1
 
         _add_batch(morning_count, start_hour, bucket_1_end)
         _add_batch(afternoon_count, bucket_1_end, bucket_2_end)
         _add_batch(evening_count, bucket_2_end, effective_end_hour)
+
+        # Assign REQ IDs in submission_time order so REQ0001 is always the
+        # earliest submission, REQ0002 the next, and so on.
+        requests.sort(key=lambda r: r.submission_time)
+        for idx, req in enumerate(requests, start=1):
+            req.request_id = f"REQ{idx:04d}"
 
         return requests
 
