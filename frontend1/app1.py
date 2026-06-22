@@ -1173,7 +1173,7 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
 
     ordered_rows = sorted(
         rows,
-        key=lambda item: parse_event_time(str(item.get("Assigned At", ""))),
+        key=lambda item: item.get("_dt") if item.get("_dt") is not None else parse_event_time(str(item.get("Assigned At", ""))),
     )
 
     display_rows: List[Dict] = []
@@ -1182,9 +1182,11 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
     day_count = 0
 
     for row in ordered_rows:
-        assigned_at_raw = row.get("Assigned At")
-        assigned_at_dt = parse_event_time(str(assigned_at_raw)) if assigned_at_raw else None
-        assigned_day = assigned_at_dt.date() if assigned_at_dt else None
+        assigned_day = row.get("_date")
+        if assigned_day is None:
+            assigned_at_raw = row.get("Assigned At")
+            assigned_at_dt = parse_event_time(str(assigned_at_raw)) if assigned_at_raw else None
+            assigned_day = assigned_at_dt.date() if assigned_at_dt else None
 
         if assigned_day != last_day:
             if last_day is not None:
@@ -1218,7 +1220,7 @@ def staff_rows_with_day_separators(rows: List[Dict]) -> List[Dict]:
                 "Document": row.get("Document", ""),
                 "Priority Score": row.get("Priority Score", ""),
                 "Queue Wait (h)": row.get("Queue Wait (h)", ""),
-                "Assigned At": format_compact_datetime(row.get("Assigned At", "")),
+                "Assigned At": format_compact_datetime(row.get("_dt") if row.get("_dt") is not None else row.get("Assigned At", "")),
             }
         )
         last_day = assigned_day
@@ -1233,250 +1235,260 @@ initialize_state()
 # SIDEBAR CONTROLS
 # ============================================================================
 
-st.sidebar.header("🎛️ Simulation Controls")
+@st.fragment
+def render_sidebar_controls():
+    st.header("🎛️ Simulation Controls")
 
-run_col, reset_col = st.sidebar.columns(2)
-run_clicked = run_col.button("🚀 Run", use_container_width=True)
-reset_clicked = reset_col.button("🧹 Reset", use_container_width=True)
+    run_col, reset_col = st.columns(2)
+    run_clicked = run_col.button("🚀 Run", use_container_width=True)
+    reset_clicked = reset_col.button("🧹 Reset", use_container_width=True)
 
-if reset_clicked:
-    clear_run_state()
-    st.rerun()
+    if reset_clicked:
+        clear_run_state()
+        st.rerun()
 
-st.sidebar.selectbox(
-    "Scheduler",
-    SCHEDULER_OPTIONS,
-    key="scheduler_type",
-    format_func=lambda value: SCHEDULER_LABELS.get(value, value),
-)
-st.sidebar.selectbox(
-    "Allocator",
-    ALLOCATOR_OPTIONS,
-    key="allocator_type",
-    format_func=lambda value: ALLOCATOR_LABELS.get(value, value.replace("_", " ").title()),
-)
-
-st.sidebar.subheader("Capacity and Policy")
-st.sidebar.slider(
-    "Number of Staff",
-    min_value=len(COLLEGES),
-    max_value=len(COLLEGES) * 2,
-    step=1,
-    key="num_staff",
-)
-st.sidebar.slider("Daily Quota per Staff", min_value=1, max_value=60, step=1, key="quota_limit")
-
-max_absent_staff = max(0, int(st.session_state.num_staff) - 1)
-st.sidebar.checkbox(
-    "Enable Staff Absence",
-    key="enable_absence",
-    disabled=(max_absent_staff == 0),
-    help="Turn on to model staff being absent during the run.",
-)
-
-if max_absent_staff == 0:
-    st.session_state.enable_absence = False
-    st.session_state.num_absent_staff = 0
-elif st.session_state.enable_absence:
-    if st.session_state.num_absent_staff < 1:
-        st.session_state.num_absent_staff = 1
-    if st.session_state.num_absent_staff > max_absent_staff:
-        st.session_state.num_absent_staff = max_absent_staff
-
-    st.sidebar.slider(
-        "Number of Absent Staff",
-        min_value=1,
-        max_value=max_absent_staff,
-        step=1,
-        key="num_absent_staff",
+    st.selectbox(
+        "Scheduler",
+        SCHEDULER_OPTIONS,
+        key="scheduler_type",
+        format_func=lambda value: SCHEDULER_LABELS.get(value, value),
     )
-else:
-    st.session_state.num_absent_staff = 0
-
-st.sidebar.time_input("Workday Start", key="work_start_time")
-st.sidebar.time_input("Workday End", key="work_end_time")
-
-st.sidebar.subheader("Demand")
-st.sidebar.slider("Total Daily Requests", min_value=50, max_value=500, step=10, key="total_requests")
-st.sidebar.checkbox("Enable Urgency", value=False, key="urgency")
-st.sidebar.checkbox("Disable Generated Requests", value=False, key="disable_generated_requests", help="If enabled, only custom requests stored in the database are simulated.")
-def on_peak_mode_change():
-    if st.session_state.peak_mode:
-        if st.session_state.total_requests == 100:
-            st.session_state.total_requests = 300
-    elif st.session_state.total_requests == 300:
-        st.session_state.total_requests = 100
-
-st.sidebar.checkbox("Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change)
-st.sidebar.slider("College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
-
-st.sidebar.subheader("Seed")
-st.sidebar.radio("Seed Mode", ["Auto", "Manual"], key="seed_mode", horizontal=True)
-if st.session_state.seed_mode == "Manual":
-    st.sidebar.number_input(
-        "Manual Seed",
-        min_value=1,
-        max_value=2_147_483_647,
-        step=1,
-        key="manual_seed",
+    st.selectbox(
+        "Allocator",
+        ALLOCATOR_OPTIONS,
+        key="allocator_type",
+        format_func=lambda value: ALLOCATOR_LABELS.get(value, value.replace("_", " ").title()),
     )
-else:
-    st.sidebar.caption("Auto mode will generate a seed and show it in the results.")
 
-if st.session_state.scheduler_type == "WEIGHTED":
-    st.sidebar.subheader("Weighted Priority")
-    for key in active_criteria():
-        state_key = weight_state_key(key)
-        if state_key not in st.session_state:
-            # Use PRIORITY_ROC_WEIGHTS_FULL for urgency to get the correct ROC default
-            if key == "urgency":
-                default_raw = PRIORITY_ROC_WEIGHTS_FULL.get(key, 0.02)
-            else:
-                default_raw = PRIORITY_WEIGHTS.get(key, 0.0)
-            default_val = int(default_raw * 100) if isinstance(default_raw, (int, float)) else 50
-            st.session_state[state_key] = default_val
+    st.subheader("Capacity and Policy")
+    st.slider(
+        "Number of Staff",
+        min_value=len(COLLEGES),
+        max_value=len(COLLEGES) * 2,
+        step=1,
+        key="num_staff",
+    )
+    st.slider("Daily Quota per Staff", min_value=1, max_value=60, step=1, key="quota_limit")
 
-    for key in active_criteria():
-        st.sidebar.slider(
-            f"Weight: {format_criterion_label(key)}",
-            min_value=0,
-            max_value=100,
+    max_absent_staff = max(0, int(st.session_state.num_staff) - 1)
+    st.checkbox(
+        "Enable Staff Absence",
+        key="enable_absence",
+        disabled=(max_absent_staff == 0),
+        help="Turn on to model staff being absent during the run.",
+    )
+
+    if max_absent_staff == 0:
+        st.session_state.enable_absence = False
+        st.session_state.num_absent_staff = 0
+    elif st.session_state.enable_absence:
+        if st.session_state.num_absent_staff < 1:
+            st.session_state.num_absent_staff = 1
+        if st.session_state.num_absent_staff > max_absent_staff:
+            st.session_state.num_absent_staff = max_absent_staff
+
+        st.slider(
+            "Number of Absent Staff",
+            min_value=1,
+            max_value=max_absent_staff,
             step=1,
-            key=weight_state_key(key),
+            key="num_absent_staff",
         )
-
-    current_weights = normalized_weights_from_ui()
-    st.sidebar.caption(
-        "Normalized: "
-        + ", ".join(f"{format_criterion_label(k)}={v:.2f}" for k, v in current_weights.items())
-    )
-    st.sidebar.info("Tie-break rule: earlier submission_time wins when scores are equal.")
-
-st.sidebar.subheader("Presets")
-presets = load_presets()
-preset_names = ["(select)"] + sorted(list(presets.keys()))
-selected_preset = st.sidebar.selectbox("Saved Presets", preset_names)
-
-load_col, save_col = st.sidebar.columns(2)
-load_clicked = load_col.button("Load", use_container_width=True)
-save_clicked = save_col.button("Save", use_container_width=True)
-
-preset_name_input = st.sidebar.text_input("Preset Name", value="")
-
-if load_clicked and selected_preset in presets:
-    apply_ui_config(presets[selected_preset])
-    st.rerun()
-
-if save_clicked:
-    name = preset_name_input.strip()
-    if name:
-        presets[name] = collect_ui_config()
-        save_presets(presets)
-        st.sidebar.success(f"Saved preset: {name}")
     else:
-        st.sidebar.warning("Enter a preset name before saving.")
+        st.session_state.num_absent_staff = 0
 
-# ============================================================================
-# CUSTOM REQUESTS MANAGER IN SIDEBAR
-# ============================================================================
-with st.sidebar.expander("🛠️ Custom Request Manager", expanded=False):
-    # Fetch current custom requests
-    try:
-        res = requests.get(f"{BACKEND_URL}/api/custom-requests", timeout=5)
-        if res.status_code == 200:
-            custom_reqs = res.json()
-        else:
-            custom_reqs = []
-    except Exception:
-        custom_reqs = []
+    st.time_input("Workday Start", key="work_start_time")
+    st.time_input("Workday End", key="work_end_time")
 
-    st.markdown("### ➕ Add Custom Request")
-    c_college = st.selectbox("College", COLLEGES, key="c_req_college")
-    c_doc = st.selectbox("Document Type", list(DOCUMENT_COMPLEXITY.keys()), key="c_req_doc")
-    c_requester = st.selectbox("Requester Type", list(REQUESTER_PRIORITY.keys()), key="c_req_requester")
-    c_urgency = st.slider("Urgency Level", min_value=1, max_value=10, value=5, key="c_req_urgency")
-    c_sub_time = st.text_input("Submission Time", value="09:00", help="Use HH:MM format (e.g. 09:15) or full ISO datetime.", key="c_req_sub")
-    c_payment = st.selectbox("Payment Status", ["Paid", "Unpaid"], key="c_req_payment")
-    c_stage = st.selectbox("Requirements Stage", ["complete", "partial", "incomplete"], key="c_req_stage")
+    st.subheader("Demand")
+    st.slider("Total Daily Requests", min_value=50, max_value=500, step=10, key="total_requests")
+    st.checkbox("Enable Urgency", value=False, key="urgency")
+    st.checkbox("Disable Generated Requests", value=False, key="disable_generated_requests", help="If enabled, only custom requests stored in the database are simulated.")
     
-    if st.button("➕ Add Request", use_container_width=True, key="c_req_add_btn"):
-        payload = {
-            "college": c_college,
-            "document_type": c_doc,
-            "urgency": c_urgency,
-            "requester_type": c_requester,
-            "submission_time": c_sub_time,
-            "payment_status": c_payment,
-            "requirements_stage": c_stage,
-            "completeness_of_requirements": 1.0 if c_stage == "complete" else (0.7 if c_stage == "partial" else 0.3)
-        }
-        try:
-            add_res = requests.post(f"{BACKEND_URL}/api/custom-requests", json=payload, timeout=5)
-            if add_res.status_code == 201:
-                st.sidebar.success(f"Successfully added custom request: {add_res.json().get('request_id')}")
-                tm.sleep(0.5)
-                st.rerun()
-            else:
-                st.sidebar.error(f"Failed to add: {add_res.text}")
-        except Exception as e:
-            st.sidebar.error(f"Error connecting to backend: {e}")
-            
-    if custom_reqs:
-        st.markdown("### 📋 Existing Custom Requests")
-        custom_df = pd.DataFrame([
-            {
-                "ID": r["request_id"],
-                "College": r["college"],
-                "Document": r["document_type"],
-                "Urgency": r["urgency"],
-                "Requester": r["requester_type"],
-                "Submission": r["submission_time"],
-                "Requirements": r["requirements_stage"],
-                "Payment": r["payment_status"]
-            } for r in custom_reqs
-        ])
-        st.dataframe(custom_df, use_container_width=True)
-        
-        to_delete = st.selectbox("Select Request ID to Delete", options=[r["request_id"] for r in custom_reqs], key="c_req_to_delete")
-        if st.button("🗑️ Delete Selected Request", use_container_width=True, key="c_req_del_btn"):
-            try:
-                del_res = requests.delete(f"{BACKEND_URL}/api/custom-requests/{to_delete}", timeout=5)
-                if del_res.status_code == 200:
-                    st.sidebar.success(f"Deleted {to_delete}")
-                    tm.sleep(0.5)
-                    st.rerun()
-                else:
-                    st.sidebar.error(f"Failed to delete: {del_res.text}")
-            except Exception as e:
-                st.sidebar.error(f"Error: {e}")
-                
-        if st.button("💥 Clear All Requests", use_container_width=True, key="c_req_clear_btn"):
-            try:
-                clear_res = requests.delete(f"{BACKEND_URL}/api/custom-requests", timeout=5)
-                if clear_res.status_code == 200:
-                    st.sidebar.success("Cleared all custom requests")
-                    tm.sleep(0.5)
-                    st.rerun()
-                else:
-                    st.sidebar.error(f"Failed to clear: {clear_res.text}")
-            except Exception as e:
-                st.sidebar.error(f"Error: {e}")
-    else:
-        st.sidebar.info("No custom requests in the database. Add one above or via API. http://localhost:5000/api/custom-requests")
-# 🔍 DEBUG: Urgency Toggle Verification
-if st.session_state.simulation_engine is not None:
-    with st.sidebar.expander("🐛 Debug: Urgency Status", expanded=False):
-        st.markdown(f"**Checkbox State:** `{st.session_state.urgency}`")
-        st.markdown(f"**ROC Weight for Urgency:** `{PRIORITY_WEIGHTS.get('urgency', 'N/A')}`")
-            
-        if st.session_state.simulation_results and st.session_state.simulation_results.get('completed_requests'):
-            sample = st.session_state.simulation_results['completed_requests'][0]
-            st.markdown(f"**Sample Request `{sample['request_id']}` Priority:** `{sample['priority_score']}`")
-            st.caption("Run twice (checkbox OFF/ON) to compare this number.")
+    def on_peak_mode_change():
+        if st.session_state.peak_mode:
+            if st.session_state.total_requests == 100:
+                st.session_state.total_requests = 300
+        elif st.session_state.total_requests == 300:
+            st.session_state.total_requests = 100
 
-if run_clicked:
-    with st.spinner("Running simulation..."):
+    st.checkbox("Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change)
+    st.slider("College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
+
+    st.subheader("Seed")
+    st.radio("Seed Mode", ["Auto", "Manual"], key="seed_mode", horizontal=True)
+    if st.session_state.seed_mode == "Manual":
+        st.number_input(
+            "Manual Seed",
+            min_value=1,
+            max_value=2_147_483_647,
+            step=1,
+            key="manual_seed",
+        )
+    else:
+        st.caption("Auto mode will generate a seed and show it in the results.")
+
+    if st.session_state.scheduler_type == "WEIGHTED":
+        st.subheader("Weighted Priority")
+        for key in active_criteria():
+            state_key = weight_state_key(key)
+            if state_key not in st.session_state:
+                # Use PRIORITY_ROC_WEIGHTS_FULL for urgency to get the correct ROC default
+                if key == "urgency":
+                    default_raw = PRIORITY_ROC_WEIGHTS_FULL.get(key, 0.02)
+                else:
+                    default_raw = PRIORITY_WEIGHTS.get(key, 0.0)
+                default_val = int(default_raw * 100) if isinstance(default_raw, (int, float)) else 50
+                st.session_state[state_key] = default_val
+
+        for key in active_criteria():
+            st.slider(
+                f"Weight: {format_criterion_label(key)}",
+                min_value=0,
+                max_value=100,
+                step=1,
+                key=weight_state_key(key),
+            )
+
+        current_weights = normalized_weights_from_ui()
+        st.caption(
+            "Normalized: "
+            + ", ".join(f"{format_criterion_label(k)}={v:.2f}" for k, v in current_weights.items())
+        )
+        st.info("Tie-break rule: earlier submission_time wins when scores are equal.")
+
+    st.subheader("Presets")
+    presets = load_presets()
+    preset_names = ["(select)"] + sorted(list(presets.keys()))
+    selected_preset = st.selectbox("Saved Presets", preset_names)
+
+    load_col, save_col = st.columns(2)
+    load_clicked = load_col.button("Load", use_container_width=True)
+    save_clicked = save_col.button("Save", use_container_width=True)
+
+    preset_name_input = st.text_input("Preset Name", value="")
+
+    if load_clicked and selected_preset in presets:
+        apply_ui_config(presets[selected_preset])
+        st.rerun()
+
+    if save_clicked:
+        name = preset_name_input.strip()
+        if name:
+            presets[name] = collect_ui_config()
+            save_presets(presets)
+            st.success(f"Saved preset: {name}")
+        else:
+            st.warning("Enter a preset name before saving.")
+
+    # ============================================================================
+    # CUSTOM REQUESTS MANAGER IN SIDEBAR
+    # ============================================================================
+    with st.expander("🛠️ Custom Request Manager", expanded=False):
+        # Fetch current custom requests
+        try:
+            res = requests.get(f"{BACKEND_URL}/api/custom-requests", timeout=5)
+            if res.status_code == 200:
+                custom_reqs = res.json()
+            else:
+                custom_reqs = []
+        except Exception:
+            custom_reqs = []
+
+        st.markdown("### ➕ Add Custom Request")
+        c_college = st.selectbox("College", COLLEGES, key="c_req_college")
+        c_doc = st.selectbox("Document Type", list(DOCUMENT_COMPLEXITY.keys()), key="c_req_doc")
+        c_requester = st.selectbox("Requester Type", list(REQUESTER_PRIORITY.keys()), key="c_req_requester")
+        c_urgency = st.slider("Urgency Level", min_value=1, max_value=10, value=5, key="c_req_urgency")
+        c_sub_time = st.text_input("Submission Time", value="09:00", help="Use HH:MM format (e.g. 09:15) or full ISO datetime.", key="c_req_sub")
+        c_payment = st.selectbox("Payment Status", ["Paid", "Unpaid"], key="c_req_payment")
+        c_stage = st.selectbox("Requirements Stage", ["complete", "partial", "incomplete"], key="c_req_stage")
+        
+        if st.button("➕ Add Request", use_container_width=True, key="c_req_add_btn"):
+            payload = {
+                "college": c_college,
+                "document_type": c_doc,
+                "urgency": c_urgency,
+                "requester_type": c_requester,
+                "submission_time": c_sub_time,
+                "payment_status": c_payment,
+                "requirements_stage": c_stage,
+                "completeness_of_requirements": 1.0 if c_stage == "complete" else (0.7 if c_stage == "partial" else 0.3)
+            }
+            try:
+                add_res = requests.post(f"{BACKEND_URL}/api/custom-requests", json=payload, timeout=5)
+                if add_res.status_code == 201:
+                    st.success(f"Successfully added custom request: {add_res.json().get('request_id')}")
+                    tm.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error(f"Failed to add: {add_res.text}")
+            except Exception as e:
+                st.error(f"Error connecting to backend: {e}")
+                
+        if custom_reqs:
+            st.markdown("### 📋 Existing Custom Requests")
+            custom_df = pd.DataFrame([
+                {
+                    "ID": r["request_id"],
+                    "College": r["college"],
+                    "Document": r["document_type"],
+                    "Urgency": r["urgency"],
+                    "Requester": r["requester_type"],
+                    "Submission": r["submission_time"],
+                    "Requirements": r["requirements_stage"],
+                    "Payment": r["payment_status"]
+                } for r in custom_reqs
+            ])
+            st.dataframe(custom_df, use_container_width=True)
+            
+            to_delete = st.selectbox("Select Request ID to Delete", options=[r["request_id"] for r in custom_reqs], key="c_req_to_delete")
+            if st.button("🗑️ Delete Selected Request", use_container_width=True, key="c_req_del_btn"):
+                try:
+                    del_res = requests.delete(f"{BACKEND_URL}/api/custom-requests/{to_delete}", timeout=5)
+                    if del_res.status_code == 200:
+                        st.success(f"Deleted {to_delete}")
+                        tm.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to delete: {del_res.text}")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    
+            if st.button("💥 Clear All Requests", use_container_width=True, key="c_req_clear_btn"):
+                try:
+                    clear_res = requests.delete(f"{BACKEND_URL}/api/custom-requests", timeout=5)
+                    if clear_res.status_code == 200:
+                        st.success("Cleared all custom requests")
+                        tm.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to clear: {clear_res.text}")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+        else:
+            st.info("No custom requests in the database. Add one above or via API. http://localhost:5000/api/custom-requests")
+
+    # 🔍 DEBUG: Urgency Toggle Verification
+    if st.session_state.simulation_engine is not None:
+        with st.expander("🐛 Debug: Urgency Status", expanded=False):
+            st.markdown(f"**Checkbox State:** `{st.session_state.urgency}`")
+            st.markdown(f"**ROC Weight for Urgency:** `{PRIORITY_WEIGHTS.get('urgency', 'N/A')}`")
+                
+            if st.session_state.simulation_results and st.session_state.simulation_results.get('completed_requests'):
+                sample = st.session_state.simulation_results['completed_requests'][0]
+                st.markdown(f"**Sample Request `{sample['request_id']}` Priority:** `{sample['priority_score']}`")
+                st.caption("Run twice (checkbox OFF/ON) to compare this number.")
+
+    if run_clicked:
         run_simulation_now()
+        if st.session_state.simulation_results is not None:
+            st.rerun()
+
+
+# Call the sidebar fragment function inside the sidebar context
+with st.sidebar:
+    render_sidebar_controls()
 
 
 # Custom Request Manager moved to sidebar expander.
@@ -1513,17 +1525,23 @@ st.markdown(
 )
 
 
-# ============================================================================
-# PLAYBACK CONTROLS
-# ============================================================================
+@st.fragment
+def render_playback_section(results, engine):
+    st.header("Playback")
 
-st.header("Playback")
+    event_log = results.get("event_log", [])
+    
+    # 2. Cache decisions filtering in st.session_state
+    run_key = (results.get("seed_used"), results.get("scheduler_type"), results.get("allocator_type"))
+    if st.session_state.get("cached_decisions_run_key") != run_key:
+        st.session_state.decisions = routing_events(event_log)
+        st.session_state.cached_decisions_run_key = run_key
+    decisions = st.session_state.decisions
 
-event_log = results.get("event_log", [])
-decisions = routing_events(event_log)
-if not decisions:
-    st.warning("No request-routing decisions available for playback.")
-else:
+    if not decisions:
+        st.warning("No request-routing decisions available for playback.")
+        return
+
     max_step = len(decisions) - 1
     st.session_state.playback_frame = min(st.session_state.playback_frame, max_step)
     st.session_state.playback_frame_ui = min(max(st.session_state.playback_frame_ui, 1), max_step + 1)
@@ -1569,10 +1587,18 @@ else:
     frame_data = playback_state(decisions, st.session_state.playback_frame)
     current_event = frame_data["current_event"]
 
-    request_lookup = {}
-    for request_item in results.get("generated_requests", []):
-        if isinstance(request_item, dict) and request_item.get("request_id"):
-            request_lookup[request_item["request_id"]] = request_item
+    # 1. Cache request_lookup with pre-parsed submission times
+    if st.session_state.get("cached_request_lookup_run_key") != run_key:
+        lookup = {}
+        for request_item in results.get("generated_requests", []):
+            if isinstance(request_item, dict) and request_item.get("request_id"):
+                req_copy = request_item.copy()
+                sub_raw = req_copy.get("submission_time")
+                req_copy["_submission_time_parsed"] = parse_event_time(sub_raw) if sub_raw else None
+                lookup[req_copy["request_id"]] = req_copy
+        st.session_state.request_lookup = lookup
+        st.session_state.cached_request_lookup_run_key = run_key
+    request_lookup = st.session_state.request_lookup
 
     staff_rows: Dict[str, List[Dict]] = {}
     staff_meta: Dict[str, Dict] = {}
@@ -1583,6 +1609,7 @@ else:
             "quota": staff.quota_limit,
         }
 
+    # 3. Pre-parse assignment datetime (_dt) and date (_date) inside loop
     for assignment in frame_data["assignments"]:
         staff_id = assignment.get("Staff") or "UNASSIGNED"
         request_id = assignment.get("Request")
@@ -1596,6 +1623,11 @@ else:
         is_custom_req = request_meta.get("is_custom", False)
         req_display = f"⭐ {request_id}" if is_custom_req else request_id
 
+        # Pre-parse Assigned At time
+        assigned_at_raw = assignment.get("Time")
+        assigned_at_dt = parse_event_time(str(assigned_at_raw)) if assigned_at_raw else None
+        assigned_at_date = assigned_at_dt.date() if assigned_at_dt else None
+
         staff_rows[staff_id].append(
             {
                 "Request": req_display,
@@ -1604,6 +1636,8 @@ else:
                 "Priority Score": round(float(priority_score or 0.0), 4),
                 "Queue Wait (h)": assignment.get("Queue Wait (h)"),
                 "Assigned At": assignment.get("Time"),
+                "_dt": assigned_at_dt,
+                "_date": assigned_at_date,
             }
         )
 
@@ -1637,6 +1671,9 @@ else:
             }
         )
 
+    is_weighted_scheduler = results.get("scheduler_type") == "WEIGHTED"
+    staff_college_map = build_staff_college_map(engine.staff_pool)
+
     if is_weighted_scheduler:
         waiting_rows.sort(
             key=lambda row: (
@@ -1653,12 +1690,12 @@ else:
             if assign_item.get("Request"):
                 routed_request_ids.add(assign_item["Request"])
 
+        # Optimize pending queue loop using pre-parsed submission times
         pending_queue_rows = []
         for request_id, request_meta in request_lookup.items():
-            submission_raw = request_meta.get("submission_time")
-            if not submission_raw:
+            submission_time = request_meta.get("_submission_time_parsed")
+            if not submission_time:
                 continue
-            submission_time = parse_event_time(submission_raw)
             if submission_time <= current_time and request_id not in routed_request_ids:
                 is_custom_req = request_meta.get("is_custom", False)
                 req_display = f"⭐ {request_id}" if is_custom_req else request_id
@@ -1668,7 +1705,7 @@ else:
                         "College": request_meta.get("college", "-"),
                         "Document": request_meta.get("document_type", "-"),
                         "Priority Score": round(float(request_meta.get("priority_score", 0.0) or 0.0), 4),
-                        "Submitted": format_compact_datetime(submission_raw),
+                        "Submitted": format_compact_datetime(request_meta.get("submission_time")),
                         "Pending Wait (h)": round((current_time - submission_time).total_seconds() / 3600.0, 2),
                         "_sort_submission": submission_time,
                     }
@@ -1709,9 +1746,9 @@ else:
             rows_for_staff = staff_rows.get(staff.staff_id, [])
             total_assigned = len(rows_for_staff)
             assigned_today = 0
+            # 4. Use pre-parsed date object (_date) instead of parse_event_time
             for row in rows_for_staff:
-                assigned_at = row.get("Assigned At")
-                if assigned_at and parse_event_time(str(assigned_at)).date() == current_day:
+                if row.get("_date") == current_day:
                     assigned_today += 1
 
             quota_value = staff.quota_limit if quota_enforced else None
@@ -1763,7 +1800,8 @@ else:
             height=360,
         )
         apply_plot_theme(fig_capacity)
-        st.plotly_chart(fig_capacity, use_container_width=True)
+        # 5. Pass config={"staticPlot": True} to optimize chart rendering during playback
+        st.plotly_chart(fig_capacity, use_container_width=True, config={"staticPlot": True})
 
         st.subheader("Live Staff Request Lists")
         ordered_staff_ids = [staff.staff_id for staff in engine.staff_pool]
@@ -1822,9 +1860,11 @@ else:
         if st.session_state.playback_frame < max_step:
             tm.sleep(SPEED_OPTIONS.get(st.session_state.playback_speed, 0.45))
             st.session_state.playback_frame += 1
-            st.rerun()
+            st.rerun(scope="fragment")
         else:
             st.session_state.playback_playing = False
+# Call the playback fragment function
+render_playback_section(results, engine)
 
 
 # ============================================================================
