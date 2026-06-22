@@ -185,6 +185,9 @@ def run_simulation():
             "sim_start_date": data.get("sim_start_date"),
             "align_custom_dates": data.get("align_custom_dates", False),
             "custom_requests": data.get("custom_requests"),
+            "num_staff": num_staff,
+            "quota_limit": quota_limit,
+            "urgency": urgency,
         })
 
         staff_info = get_staff_info(engine)

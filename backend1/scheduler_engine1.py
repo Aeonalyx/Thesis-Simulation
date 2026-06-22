@@ -136,7 +136,7 @@ COMPLETENESS_LEVELS = {
 }
 REQUIREMENTS_PARTIAL_DELAY_HOURS_RANGE = (0.0, 0.2) # up to 12 minutes for partial requirements
 REQUIREMENTS_COMPLETE_EXTRA_DELAY_HOURS_RANGE = (0.0, 1.0) # up to 1 hour after partial for complete requirements
-PAYMENT_DELAY_HOURS_RANGE = (0.0, 48.0) # up to 2 days for payment after submission (if required)
+PAYMENT_DELAY_HOURS_RANGE = (0.0, 24.0) # up to 2 days for payment after submission (if required)
 
 
 def _build_college_priority() -> Dict[str, float]:
