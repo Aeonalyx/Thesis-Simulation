@@ -414,6 +414,37 @@ def apply_dashboard_theme():
             background: rgba(255, 255, 255, 0.14);
             white-space: nowrap;
         }
+
+        .snap-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.6rem;
+            margin-top: 0.8rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            padding-top: 0.8rem;
+            width: 100%;
+        }
+        .snap-item {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            padding: 0.4rem 0.6rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+        }
+        .snap-label {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #b6b0d4;
+            font-weight: 700;
+        }
+        .snap-value {
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: #f5f3ff;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -665,6 +696,10 @@ def build_api_payload() -> Dict:
 
 
 def run_simulation_now():
+    # Reset comparison state so the user must click "Run Comparison" again for the new run
+    st.session_state.comparison_df = None
+    st.session_state.comparison_details = None
+
     payload = build_api_payload()
     with st.spinner():
         try:
@@ -1510,15 +1545,89 @@ staff_college_map = build_staff_college_map(engine.staff_pool)
 st.success("Simulation complete.")
 
 seed_used = results.get("seed_used")
+run_cfg = results.get("run_config", {})
+
+# 1. Number of staff
+num_staff = run_cfg.get("num_staff")
+if num_staff is None:
+    num_staff = len(results.get("staff_info", [])) or st.session_state.num_staff
+
+# 2. Quota limit
+quota_limit = run_cfg.get("quota_limit")
+if quota_limit is None:
+    staff_info = results.get("staff_info", [])
+    quota_limit = staff_info[0].get("quota_limit") if staff_info else st.session_state.quota_limit
+
+# 3. Enabled staff absence status
+num_absent = run_cfg.get("num_absent_staff", 0)
+if num_absent > 0:
+    absence_status = f"🔴 Enabled ({num_absent} absent)"
+else:
+    absence_status = "🟢 None (All active)"
+
+# 4. Generated requests + custom requests
+disable_generated = run_cfg.get("disable_generated_requests", False)
+all_reqs = results.get("generated_requests", [])
+total_custom = sum(1 for r in all_reqs if r.get("is_custom"))
+total_gen = sum(1 for r in all_reqs if not r.get("is_custom"))
+
+if disable_generated:
+    demand_mode = f"⭐ Custom only ({total_custom} reqs)"
+else:
+    demand_mode = f"🤖 Gen: {total_gen} | ⭐ Cust: {total_custom}"
+
+# 5. Urgency
+urgency_enabled = run_cfg.get("urgency", False)
+urgency_status = "⚡ Enabled" if urgency_enabled else "❌ Disabled"
+
+# 6. Peak period
+scenario = run_cfg.get("scenario", "baseline")
+is_peak = (scenario == "peak_period" or run_cfg.get("peak_mode", False))
+peak_status = "🔥 Peak" if is_peak else "Regular"
+
+# 7. College imbalance percentage
+imbalance_factor = run_cfg.get("imbalance_factor", 0)
+
+scheduler_label = SCHEDULER_LABELS.get(results.get('scheduler_type'), results.get('scheduler_type'))
+allocator_label = ALLOCATOR_LABELS.get(results.get('allocator_type'), str(results.get('allocator_type')).replace('_', ' ').title())
+
 st.markdown(
     f"""
-    <div class="hero-band">
-        <div>
-            <p class="hero-kicker">Simulation Snapshot</p>
-            <p class="hero-title">Scheduler: {SCHEDULER_LABELS.get(results.get('scheduler_type'), results.get('scheduler_type'))} | Allocator: {ALLOCATOR_LABELS.get(results.get('allocator_type'), str(results.get('allocator_type')).replace('_', ' ').title())}</p>
-            <p class="hero-sub">Seed: {seed_used} | Mode: Custom sliders</p>
+    <div class="hero-band" style="flex-direction: column; align-items: stretch; gap: 0.8rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div>
+                <p class="hero-kicker">Simulation Snapshot</p>
+                <p class="hero-title">Scheduler: {scheduler_label} | Allocator: {allocator_label}</p>
+                <p class="hero-sub">Seed: {seed_used} | Mode: Custom sliders</p>
+            </div>
+            <div class="hero-pill">Ready for playback</div>
         </div>
-        <div class="hero-pill">Ready for playback</div>
+        <div class="snap-grid">
+            <div class="snap-item">
+                <span class="snap-label">👥 Staffing</span>
+                <span class="snap-value">{num_staff} Staff (Quota: {quota_limit}/day)</span>
+            </div>
+            <div class="snap-item">
+                <span class="snap-label">🤒 Staff Absence</span>
+                <span class="snap-value">{absence_status}</span>
+            </div>
+            <div class="snap-item">
+                <span class="snap-label">📥 Demand Mode</span>
+                <span class="snap-value">{demand_mode}</span>
+            </div>
+            <div class="snap-item">
+                <span class="snap-label">⚡ Urgency State</span>
+                <span class="snap-value">{urgency_status}</span>
+            </div>
+            <div class="snap-item">
+                <span class="snap-label">📈 Peak Period</span>
+                <span class="snap-value">{peak_status}</span>
+            </div>
+            <div class="snap-item">
+                <span class="snap-label">⚖️ College Imbalance</span>
+                <span class="snap-value">{imbalance_factor}%</span>
+            </div>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -1779,6 +1888,8 @@ def render_playback_section(results, engine):
                 x=capacity_df["Staff"],
                 y=capacity_df["Assigned Today"],
                 marker_color="#a855f7",
+                text=capacity_df["Assigned Today"],
+                textposition="outside",
             )
         )
         if quota_enforced:
@@ -1789,6 +1900,8 @@ def render_playback_section(results, engine):
                     y=capacity_df["Quota/Day"],
                     marker_color="#22d3ee",
                     opacity=0.55,
+                    text=capacity_df["Quota/Day"],
+                    textposition="outside",
                 )
             )
 
@@ -2033,7 +2146,7 @@ if engine.completed:
         color="College",
         color_discrete_sequence=CHART_COLORWAY,
         title=f"Assignments per Day by College — {variant_label}",
-        height=450,
+        height=500,
         text="Count" if st.session_state.labels_outside else None,
     )
     apply_plot_theme(fig_timeline)
@@ -2811,6 +2924,8 @@ if st.session_state.comparison_df is not None and comparison_details:
                     x=diff_df["Allocator"],
                     y=diff_df["Order Changed %"],
                     marker_color="#a855f7",
+                    text=diff_df["Order Changed %"].apply(lambda v: f"{v:.1f}%"),
+                    textposition="outside",
                 )
             )
             fig_diff.add_trace(
