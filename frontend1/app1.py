@@ -1294,7 +1294,37 @@ def render_sidebar_controls():
         key="allocator_type",
         format_func=lambda value: ALLOCATOR_LABELS.get(value, value.replace("_", " ").title()),
     )
+    if st.session_state.scheduler_type == "WEIGHTED":
+        with st.expander("📊 Priority Weights", expanded=False):
 
+            st.subheader("Weighted Priority")
+
+            for key in active_criteria():
+                state_key = weight_state_key(key)
+                if state_key not in st.session_state:
+                    if key == "urgency":
+                        default_raw = PRIORITY_ROC_WEIGHTS_FULL.get(key, 0.02)
+                    else:
+                        default_raw = PRIORITY_WEIGHTS.get(key, 0.0)
+
+                    default_val = int(default_raw * 100) if isinstance(default_raw, (int, float)) else 50
+                    st.session_state[state_key] = default_val
+
+            for key in active_criteria():
+                st.slider(
+                    f"Weight: {format_criterion_label(key)}",
+                    min_value=0,
+                    max_value=100,
+                    step=1,
+                    key=weight_state_key(key),
+                )
+
+            current_weights = normalized_weights_from_ui()
+            st.caption(
+                "Normalized: "
+                + ", ".join(f"{format_criterion_label(k)}={v:.2f}" for k, v in current_weights.items()),
+                help="Tie-break rule: earlier submission_time wins when scores are equal."
+            )
     st.subheader("Capacity and Policy")
     st.slider(
         "Number of Staff",
@@ -1303,7 +1333,6 @@ def render_sidebar_controls():
         step=1,
         key="num_staff",
     )
-    st.slider("Daily Quota per Staff", min_value=1, max_value=60, step=1, key="quota_limit")
 
     max_absent_staff = max(0, int(st.session_state.num_staff) - 1)
     st.checkbox(
@@ -1332,93 +1361,27 @@ def render_sidebar_controls():
     else:
         st.session_state.num_absent_staff = 0
 
+    st.slider("Daily Quota per Staff", min_value=1, max_value=60, step=1, key="quota_limit")
     st.time_input("Workday Start", key="work_start_time")
     st.time_input("Workday End", key="work_end_time")
 
     st.subheader("Demand")
-    st.slider("Total Daily Requests", min_value=50, max_value=500, step=10, key="total_requests")
-    st.checkbox("Enable Urgency", value=False, key="urgency")
-    st.checkbox("Disable Generated Requests", value=False, key="disable_generated_requests", help="If enabled, only custom requests stored in the database are simulated.")
-    
-    def on_peak_mode_change():
-        if st.session_state.peak_mode:
-            if st.session_state.total_requests == 100:
-                st.session_state.total_requests = 300
-        elif st.session_state.total_requests == 300:
-            st.session_state.total_requests = 100
-
-    st.checkbox("Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change)
-    st.slider("College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
-
-    st.subheader("Seed")
-    st.radio("Seed Mode", ["Auto", "Manual"], key="seed_mode", horizontal=True)
-    if st.session_state.seed_mode == "Manual":
-        st.number_input(
-            "Manual Seed",
-            min_value=1,
-            max_value=2_147_483_647,
-            step=1,
-            key="manual_seed",
+    st.checkbox(
+        "Disable Generated Requests",
+        value=False,
+        key="disable_generated_requests",
+        help="If enabled, only custom requests stored in the database are simulated."
+    )
+    if not st.session_state.disable_generated_requests:
+        st.slider(
+            "Total Daily Requests",
+            min_value=50,
+            max_value=500,
+            step=10,
+            key="total_requests"
         )
-    else:
-        st.caption("Auto mode will generate a seed and show it in the results.")
 
-    if st.session_state.scheduler_type == "WEIGHTED":
-        st.subheader("Weighted Priority")
-        for key in active_criteria():
-            state_key = weight_state_key(key)
-            if state_key not in st.session_state:
-                # Use PRIORITY_ROC_WEIGHTS_FULL for urgency to get the correct ROC default
-                if key == "urgency":
-                    default_raw = PRIORITY_ROC_WEIGHTS_FULL.get(key, 0.02)
-                else:
-                    default_raw = PRIORITY_WEIGHTS.get(key, 0.0)
-                default_val = int(default_raw * 100) if isinstance(default_raw, (int, float)) else 50
-                st.session_state[state_key] = default_val
-
-        for key in active_criteria():
-            st.slider(
-                f"Weight: {format_criterion_label(key)}",
-                min_value=0,
-                max_value=100,
-                step=1,
-                key=weight_state_key(key),
-            )
-
-        current_weights = normalized_weights_from_ui()
-        st.caption(
-            "Normalized: "
-            + ", ".join(f"{format_criterion_label(k)}={v:.2f}" for k, v in current_weights.items())
-        )
-        st.info("Tie-break rule: earlier submission_time wins when scores are equal.")
-
-    st.subheader("Presets")
-    presets = load_presets()
-    preset_names = ["(select)"] + sorted(list(presets.keys()))
-    selected_preset = st.selectbox("Saved Presets", preset_names)
-
-    load_col, save_col = st.columns(2)
-    load_clicked = load_col.button("Load", use_container_width=True)
-    save_clicked = save_col.button("Save", use_container_width=True)
-
-    preset_name_input = st.text_input("Preset Name", value="")
-
-    if load_clicked and selected_preset in presets:
-        apply_ui_config(presets[selected_preset])
-        st.rerun()
-
-    if save_clicked:
-        name = preset_name_input.strip()
-        if name:
-            presets[name] = collect_ui_config()
-            save_presets(presets)
-            st.success(f"Saved preset: {name}")
-        else:
-            st.warning("Enter a preset name before saving.")
-
-    # ============================================================================
-    # CUSTOM REQUESTS MANAGER IN SIDEBAR
-    # ============================================================================
+    st.subheader("Custom Requests")
     with st.expander("🛠️ Custom Request Manager", expanded=False):
         # Fetch current custom requests
         try:
@@ -1430,6 +1393,28 @@ def render_sidebar_controls():
         except Exception:
             custom_reqs = []
 
+        with st.expander("(Postman Guide)", expanded=False):
+            st.code(
+                """
+        POST http://localhost:5000/api/custom-requests
+
+        Headers:
+        Content-Type: application/json
+
+        Body (raw JSON):
+        {
+        "college": "COE",
+        "document_type": "Transcript of Records",
+        "urgency": 9,
+        "requester_type": "Graduating Student",
+        "submission_time": "09:15",
+        "payment_status": "Paid",
+        "requirements_stage": "complete"
+        }
+        """,
+                language="bash"
+            )
+
         st.markdown("### ➕ Add Custom Request")
         c_college = st.selectbox("College", COLLEGES, key="c_req_college")
         c_doc = st.selectbox("Document Type", list(DOCUMENT_COMPLEXITY.keys()), key="c_req_doc")
@@ -1437,7 +1422,7 @@ def render_sidebar_controls():
         c_urgency = st.slider("Urgency Level", min_value=1, max_value=10, value=5, key="c_req_urgency")
         c_sub_time = st.text_input("Submission Time", value="09:00", help="Use HH:MM format (e.g. 09:15) or full ISO datetime.", key="c_req_sub")
         c_payment = st.selectbox("Payment Status", ["Paid", "Unpaid"], key="c_req_payment")
-        c_stage = st.selectbox("Requirements Stage", ["complete", "partial", "incomplete"], key="c_req_stage")
+        c_stage = st.selectbox("Requirements Stage", ["complete", "partial", "incomplete"], key="c_req_stage", format_func=lambda v: v.title())
         
         if st.button("➕ Add Request", use_container_width=True, key="c_req_add_btn"):
             payload = {
@@ -1471,7 +1456,7 @@ def render_sidebar_controls():
                     "Urgency": r["urgency"],
                     "Requester": r["requester_type"],
                     "Submission": r["submission_time"],
-                    "Requirements": r["requirements_stage"],
+                    "Requirements": r["requirements_stage"].title(),
                     "Payment": r["payment_status"]
                 } for r in custom_reqs
             ])
@@ -1503,6 +1488,55 @@ def render_sidebar_controls():
                     st.error(f"Error: {e}")
         else:
             st.info("No custom requests in the database. Add one above or via API. http://localhost:5000/api/custom-requests")
+    st.subheader("Features")
+    st.checkbox("Enable Urgency", value=False, key="urgency")
+    
+    def on_peak_mode_change():
+        if st.session_state.peak_mode:
+            if st.session_state.total_requests == 100:
+                st.session_state.total_requests = 300
+        elif st.session_state.total_requests == 300:
+            st.session_state.total_requests = 100
+
+    st.checkbox("Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change)
+    st.slider("College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
+
+    st.subheader("Seed")
+    st.radio("Seed Mode", ["Auto", "Manual"], key="seed_mode", horizontal=True)
+    if st.session_state.seed_mode == "Manual":
+        st.number_input(
+            "Manual Seed",
+            min_value=1,
+            max_value=2_147_483_647,
+            step=1,
+            key="manual_seed",
+        )
+    else:
+        st.caption("Auto mode will generate a seed and show it in the results.")
+
+    st.subheader("Presets")
+    presets = load_presets()
+    preset_names = ["(select)"] + sorted(list(presets.keys()))
+    selected_preset = st.selectbox("Saved Presets", preset_names)
+
+    load_col, save_col = st.columns(2)
+    load_clicked = load_col.button("Load", use_container_width=True)
+    save_clicked = save_col.button("Save", use_container_width=True)
+
+    preset_name_input = st.text_input("Preset Name", value="")
+
+    if load_clicked and selected_preset in presets:
+        apply_ui_config(presets[selected_preset])
+        st.rerun()
+
+    if save_clicked:
+        name = preset_name_input.strip()
+        if name:
+            presets[name] = collect_ui_config()
+            save_presets(presets)
+            st.success(f"Saved preset: {name}")
+        else:
+            st.warning("Enter a preset name before saving.")
 
     # 🔍 DEBUG: Urgency Toggle Verification
     if st.session_state.simulation_engine is not None:
@@ -1521,13 +1555,8 @@ def render_sidebar_controls():
             st.rerun()
 
 
-# Call the sidebar fragment function inside the sidebar context
 with st.sidebar:
     render_sidebar_controls()
-
-
-# Custom Request Manager moved to sidebar expander.
-
 
 # ============================================================================
 # MAIN RESULTS
@@ -1605,7 +1634,7 @@ st.markdown(
         <div class="snap-grid">
             <div class="snap-item">
                 <span class="snap-label">👥 Staffing</span>
-                <span class="snap-value">{num_staff} Staff (Quota: {quota_limit}/day)</span>
+                <span class="snap-value">{num_staff - num_absent} Staff (Quota: {quota_limit}/day)</span>
             </div>
             <div class="snap-item">
                 <span class="snap-label">🤒 Staff Absence</span>
@@ -1948,26 +1977,24 @@ def render_playback_section(results, engine):
                     else:
                         st.caption("No requests routed here yet.")
 
-        st.subheader("Queue and Waiting Lists")
-        wait_col1, wait_col2 = st.columns(2)
+        st.subheader("Pending Queue")
+        st.caption("Requests already arrived but still waiting for a slot.")
 
-        with wait_col1:
-            st.caption("Pending Queue: requests already arrived but still waiting for a slot.")
-            if pending_queue_rows:
-                render_theme_table(pd.DataFrame(pending_queue_rows), height_px=320)
-            else:
-                st.caption("No pending queue at this step.")
+        if pending_queue_rows:
+            render_theme_table(pd.DataFrame(pending_queue_rows), height_px=320)
+        else:
+            st.caption("No pending queue at this step.")
+        st.subheader("Unassignable Waiting List")
+        st.caption("Requests that cannot be routed to any staff.")
 
-        with wait_col2:
-            st.caption("Unassignable Waiting List: requests that cannot be routed to any staff.")
-            if waiting_rows:
-                waiting_display_rows = [
-                    {k: v for k, v in row.items() if not str(k).startswith("_")}
-                    for row in waiting_rows
-                ]
-                render_theme_table(pd.DataFrame(waiting_display_rows), height_px=320)
-            else:
-                st.caption("No unassignable waiting requests at this step.")
+        if waiting_rows:
+            waiting_display_rows = [
+                {k: v for k, v in row.items() if not str(k).startswith("_")}
+                for row in waiting_rows
+            ]
+            render_theme_table(pd.DataFrame(waiting_display_rows), height_px=320)
+        else:
+            st.caption("No unassignable waiting requests at this step.")
 
     if st.session_state.playback_playing:
         if st.session_state.playback_frame < max_step:
@@ -1983,6 +2010,8 @@ render_playback_section(results, engine)
 # ============================================================================
 # KPI METRICS
 # ============================================================================
+st.divider()
+
 
 st.header("Key Metrics")
 
@@ -1994,14 +2023,17 @@ gen_count = gen_m.get("total_processed", 0)
 
 k1, k2, k3, k4, k5 = st.columns(5)
 with k1:
-    processed = int(results.get("total_processed", 0))
-    expected = int(st.session_state.total_requests)
+    processed = gen_count + custom_count
+    expected = int(st.session_state.total_requests) + custom_count
     pct = (processed / expected * 100.0) if expected > 0 else 0.0
     if custom_count > 0:
         delta_str = f"{gen_count} Gen | {custom_count} Cust"
     else:
         delta_str = f"{pct:.0f}%"
-    st.metric("Total Processed", f"{processed}/{expected}" if not st.session_state.get("disable_generated_requests", False) else f"{processed} Custom", delta_str)
+    if st.session_state.get("disable_generated_requests", False):
+        st.metric("Total Processed", f"{processed} Custom", delta_str)
+    else:
+        st.metric("Total Processed", f"{processed}/{expected}", delta_str)
 with k2:
     avg_wait_hours = float(results.get("avg_waiting_time_hours", 0.0))
     if custom_count > 0 and gen_count > 0:
@@ -2584,6 +2616,7 @@ else:
 # ============================================================================
 # COMPARISON TOOLS
 # ============================================================================
+st.divider()
 
 st.header("Comparison Tools")
 
