@@ -1,0 +1,902 @@
+[
+  {
+    "college": "COE",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "09:15",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 4,
+    "requester_type": "Regular Student",
+    "submission_time": "09:15",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "09:15",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "09:15",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 8,
+    "requester_type": "Graduating Student",
+    "submission_time": "09:15",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 9,
+    "requester_type": "Regular Student",
+    "submission_time": "09:03",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 4,
+    "requester_type": "Regular Student",
+    "submission_time": "09:17",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "12:13",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Registration of Old and Returnee Students",
+    "urgency": 7,
+    "requester_type": "Regular Student",
+    "submission_time": "10:34",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 2,
+    "requester_type": "Graduating Student",
+    "submission_time": "12:37",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 3,
+    "requester_type": "Graduating Student",
+    "submission_time": "11:48",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Certification, Authentication and Verification (CAV)",
+    "urgency": 2,
+    "requester_type": "Graduating Student",
+    "submission_time": "08:57",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Authentication",
+    "urgency": 6,
+    "requester_type": "Regular Student",
+    "submission_time": "08:49",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Authentication",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "15:59",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Certification, Authentication and Verification (CAV)",
+    "urgency": 4,
+    "requester_type": "Graduating Student",
+    "submission_time": "11:42",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Registration of Old and Returnee Students",
+    "urgency": 1,
+    "requester_type": "Regular Student",
+    "submission_time": "10:09",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Authentication",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "15:23",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Completion Forms",
+    "urgency": 4,
+    "requester_type": "Faculty",
+    "submission_time": "10:39",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 3,
+    "requester_type": "Graduating Student",
+    "submission_time": "13:39",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Certification",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "10:02",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "15:32",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 10,
+    "requester_type": "Graduating Student",
+    "submission_time": "11:51",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "09:15",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Shifter\u2019s Form, Returnee\u2019s Form or Leave of Absence",
+    "urgency": 7,
+    "requester_type": "Regular Student",
+    "submission_time": "10:06",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "14:11",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Authentication",
+    "urgency": 7,
+    "requester_type": "Regular Student",
+    "submission_time": "16:30",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Certification, Authentication and Verification (CAV)",
+    "urgency": 3,
+    "requester_type": "Graduating Student",
+    "submission_time": "08:14",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Authentication",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "09:01",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Certification",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "11:26",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "16:18",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Certification",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "16:16",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Authentication",
+    "urgency": 9,
+    "requester_type": "Regular Student",
+    "submission_time": "08:09",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "15:40",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Grading Sheets",
+    "urgency": 6,
+    "requester_type": "Faculty",
+    "submission_time": "13:19",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "10:40",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Certification, Authentication and Verification (CAV)",
+    "urgency": 1,
+    "requester_type": "Graduating Student",
+    "submission_time": "13:51",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Authentication",
+    "urgency": 2,
+    "requester_type": "Regular Student",
+    "submission_time": "14:40",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Certification, Authentication and Verification (CAV)",
+    "urgency": 9,
+    "requester_type": "Graduating Student",
+    "submission_time": "15:23",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Authentication",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "10:24",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 9,
+    "requester_type": "Graduating Student",
+    "submission_time": "15:39",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 5,
+    "requester_type": "Graduating Student",
+    "submission_time": "16:39",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "15:02",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Diploma",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "08:18",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Authentication",
+    "urgency": 9,
+    "requester_type": "Graduating Student",
+    "submission_time": "16:32",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Completion Forms",
+    "urgency": 4,
+    "requester_type": "Faculty",
+    "submission_time": "09:23",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Grading Sheets",
+    "urgency": 2,
+    "requester_type": "Faculty",
+    "submission_time": "10:42",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "12:00",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 6,
+    "requester_type": "Regular Student",
+    "submission_time": "08:43",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "14:45",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Certification, Authentication and Verification (CAV)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "10:34",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 10,
+    "requester_type": "Regular Student",
+    "submission_time": "09:47",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Completion Forms",
+    "urgency": 3,
+    "requester_type": "Faculty",
+    "submission_time": "16:03",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Authentication",
+    "urgency": 1,
+    "requester_type": "Regular Student",
+    "submission_time": "13:00",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Authentication",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "15:48",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Registration of Old and Returnee Students",
+    "urgency": 2,
+    "requester_type": "Regular Student",
+    "submission_time": "12:53",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Completion Forms",
+    "urgency": 2,
+    "requester_type": "Faculty",
+    "submission_time": "16:59",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Authentication",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "15:08",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Academic Load Revision (ALRP)",
+    "urgency": 4,
+    "requester_type": "Regular Student",
+    "submission_time": "10:16",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Authentication",
+    "urgency": 5,
+    "requester_type": "Graduating Student",
+    "submission_time": "11:31",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Certification, Authentication and Verification (CAV)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "10:09",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Authentication",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "14:14",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Grading Sheets",
+    "urgency": 5,
+    "requester_type": "Faculty",
+    "submission_time": "11:27",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 1,
+    "requester_type": "Graduating Student",
+    "submission_time": "12:28",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "10:47",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Academic Load Revision (ALRP)",
+    "urgency": 1,
+    "requester_type": "Regular Student",
+    "submission_time": "12:34",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Authentication",
+    "urgency": 5,
+    "requester_type": "Graduating Student",
+    "submission_time": "15:57",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Authentication",
+    "urgency": 8,
+    "requester_type": "Graduating Student",
+    "submission_time": "14:12",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Academic Load Revision (ALRP)",
+    "urgency": 5,
+    "requester_type": "Regular Student",
+    "submission_time": "09:51",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Grading Sheets",
+    "urgency": 9,
+    "requester_type": "Faculty",
+    "submission_time": "12:09",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Diploma",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "10:39",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Completion Forms",
+    "urgency": 9,
+    "requester_type": "Faculty",
+    "submission_time": "17:00",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Certification",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "15:30",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 6,
+    "requester_type": "Graduating Student",
+    "submission_time": "11:15",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Certification, Authentication and Verification (CAV)",
+    "urgency": 1,
+    "requester_type": "Graduating Student",
+    "submission_time": "15:27",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 6,
+    "requester_type": "Regular Student",
+    "submission_time": "09:42",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Completion Forms",
+    "urgency": 7,
+    "requester_type": "Faculty",
+    "submission_time": "15:47",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Grading Sheets",
+    "urgency": 4,
+    "requester_type": "Faculty",
+    "submission_time": "16:19",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 4,
+    "requester_type": "Graduating Student",
+    "submission_time": "10:15",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Grading Sheets",
+    "urgency": 10,
+    "requester_type": "Faculty",
+    "submission_time": "08:55",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Certification, Authentication and Verification (CAV)",
+    "urgency": 4,
+    "requester_type": "Graduating Student",
+    "submission_time": "11:06",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Completion Forms",
+    "urgency": 5,
+    "requester_type": "Faculty",
+    "submission_time": "10:58",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Registration of Old and Returnee Students",
+    "urgency": 5,
+    "requester_type": "Regular Student",
+    "submission_time": "14:26",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Completion Forms",
+    "urgency": 5,
+    "requester_type": "Faculty",
+    "submission_time": "15:41",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Academic Load Revision (ALRP)",
+    "urgency": 6,
+    "requester_type": "Regular Student",
+    "submission_time": "08:27",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 3,
+    "requester_type": "Graduating Student",
+    "submission_time": "13:12",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Completion Forms",
+    "urgency": 4,
+    "requester_type": "Faculty",
+    "submission_time": "08:40",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Authentication",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "15:21",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "08:14",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Certification, Authentication and Verification (CAV)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "15:46",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Certification, Authentication and Verification (CAV)",
+    "urgency": 7,
+    "requester_type": "Graduating Student",
+    "submission_time": "16:32",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Authentication",
+    "urgency": 3,
+    "requester_type": "Graduating Student",
+    "submission_time": "09:14",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Completion Forms",
+    "urgency": 10,
+    "requester_type": "Faculty",
+    "submission_time": "12:34",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Permit to Cross-Enrol",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "12:05",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Authentication",
+    "urgency": 3,
+    "requester_type": "Regular Student",
+    "submission_time": "09:16",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Completion Forms",
+    "urgency": 7,
+    "requester_type": "Faculty",
+    "submission_time": "15:31",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)",
+    "urgency": 6,
+    "requester_type": "Regular Student",
+    "submission_time": "14:11",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Grading Sheets",
+    "urgency": 8,
+    "requester_type": "Faculty",
+    "submission_time": "15:38",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Completion Forms",
+    "urgency": 4,
+    "requester_type": "Faculty",
+    "submission_time": "08:36",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Authentication",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "10:26",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Certification",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "08:35",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  }
+]
