@@ -1,0 +1,2702 @@
+[
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "10:59",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "14:30",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Academic Load Revision (ALRP)",
+    "urgency": 6,
+    "requester_type": "Regular Student",
+    "submission_time": "09:07",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "15:55",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "11:22",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "15:28",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "10:06",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "12:52",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "09:27",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "14:53",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "11:30",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "10:03",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "16:39",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "08:15",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "10:45",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "08:51",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "15:44",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "10:52",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "16:21",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "10:37",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "13:32",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "14:19",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "14:02",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "12:55",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "12:05",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "09:26",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "11:56",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "15:19",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "08:26",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "12:32",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "08:40",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "14:21",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "14:30",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "15:09",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "13:20",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "12:42",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "10:44",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "11:58",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "10:10",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "16:57",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "14:24",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "14:29",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "15:34",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "13:30",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "08:26",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "14:45",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "11:46",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "12:33",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "08:08",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "15:25",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "08:19",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "08:40",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "12:29",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "13:21",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "14:37",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "09:22",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "16:39",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "15:40",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "13:06",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "08:00",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "16:17",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "15:16",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "10:10",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "15:01",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "12:44",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "12:17",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "10:17",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "12:52",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "12:51",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "16:18",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "09:39",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "11:51",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "10:14",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "11:09",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "13:23",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "09:05",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "10:28",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "08:22",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "13:34",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "14:50",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "10:41",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "13:35",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "11:25",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "08:41",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "08:06",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "09:02",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "10:04",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "10:36",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "15:58",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "16:17",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "08:52",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "09:08",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "14:29",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "09:42",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "12:54",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "15:49",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "16:39",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "12:08",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "15:58",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "14:14",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "15:41",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "11:40",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "08:50",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "11:38",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "13:16",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "11:51",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "09:56",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "12:31",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "16:53",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "11:07",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "14:14",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "09:35",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "08:37",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "09:35",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "12:14",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "11:19",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "11:50",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "12:18",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "10:54",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "16:58",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "13:59",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "09:48",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "13:43",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "10:08",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "09:40",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "14:10",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "15:47",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "15:56",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "13:31",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "08:02",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "13:32",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "16:07",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "14:19",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "14:47",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "13:58",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "13:44",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "09:57",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "14:10",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "09:11",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "10:26",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "12:21",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "13:44",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "16:02",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Academic Load Revision (ALRP)",
+    "urgency": 3,
+    "requester_type": "Regular Student",
+    "submission_time": "13:41",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "12:02",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "12:01",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "11:35",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "08:25",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "15:40",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "11:01",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "09:09",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "12:38",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "10:09",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "15:09",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "10:42",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "12:07",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "12:14",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "15:18",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "09:33",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "11:37",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "12:44",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "11:59",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "14:51",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "13:09",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "10:55",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "09:33",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "16:01",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "12:06",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "15:00",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "13:14",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "09:03",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "09:15",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "11:32",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "14:17",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "16:04",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "16:55",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Academic Load Revision (ALRP)",
+    "urgency": 5,
+    "requester_type": "Regular Student",
+    "submission_time": "14:25",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "10:43",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "15:20",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "09:29",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "15:41",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "14:43",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "08:50",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "15:05",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "16:27",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "11:50",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "12:13",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "14:56",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "16:55",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "10:14",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "12:23",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "11:21",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "08:21",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "13:19",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "16:32",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "13:39",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "14:27",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "15:48",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "12:20",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "09:33",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "08:57",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "12:10",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "09:02",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "10:09",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "13:24",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "11:41",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "10:21",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "12:30",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "13:08",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "16:18",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "08:44",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "12:04",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "12:33",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "11:45",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "08:34",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "12:03",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "16:15",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "09:09",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "08:09",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "13:37",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "08:36",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "15:12",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "08:38",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "12:31",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "11:51",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "13:30",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Academic Load Revision (ALRP)",
+    "urgency": 5,
+    "requester_type": "Regular Student",
+    "submission_time": "12:18",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "09:11",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "16:39",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "13:38",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "16:06",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "12:16",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "10:47",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "08:40",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "12:36",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "10:39",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "14:58",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "11:45",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "15:19",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "13:09",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "11:18",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "11:55",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "09:02",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "09:05",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "11:37",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "08:12",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "10:31",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "10:29",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "14:06",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "11:52",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "16:01",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "14:38",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "10:09",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "13:08",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "15:53",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "14:35",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "15:55",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "16:45",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "13:51",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "12:22",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "09:10",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "09:41",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "13:03",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "16:21",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "10:09",
+    "payment_status": "Paid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "11:13",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "12:16",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "12:17",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "16:24",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "11:14",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "16:07",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "15:26",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "13:12",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "09:16",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "12:43",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "14:53",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "14:10",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Academic Load Revision (ALRP)",
+    "urgency": 5,
+    "requester_type": "Regular Student",
+    "submission_time": "14:41",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "15:51",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "08:29",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "16:34",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "10:35",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "09:36",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 1,
+    "requester_type": "Alumni",
+    "submission_time": "11:17",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "08:36",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "10:18",
+    "payment_status": "Unpaid",
+    "requirements_stage": "incomplete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 2,
+    "requester_type": "Alumni",
+    "submission_time": "15:15",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 9,
+    "requester_type": "Alumni",
+    "submission_time": "11:40",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "16:30",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 10,
+    "requester_type": "Alumni",
+    "submission_time": "08:20",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CEBA",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 8,
+    "requester_type": "Alumni",
+    "submission_time": "10:53",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "12:55",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "14:58",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 4,
+    "requester_type": "Alumni",
+    "submission_time": "12:56",
+    "payment_status": "Unpaid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CSM",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "13:40",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CASS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "13:59",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  },
+  {
+    "college": "CHS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 5,
+    "requester_type": "Alumni",
+    "submission_time": "13:46",
+    "payment_status": "Unpaid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "COE",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 3,
+    "requester_type": "Alumni",
+    "submission_time": "14:28",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CED",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 7,
+    "requester_type": "Alumni",
+    "submission_time": "08:56",
+    "payment_status": "Paid",
+    "requirements_stage": "partial"
+  },
+  {
+    "college": "CCS",
+    "document_type": "Official Transcript of Records (TOR) and Transfer Credentials (TC)",
+    "urgency": 6,
+    "requester_type": "Alumni",
+    "submission_time": "11:28",
+    "payment_status": "Paid",
+    "requirements_stage": "complete"
+  }
+]

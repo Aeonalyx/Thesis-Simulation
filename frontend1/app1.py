@@ -649,12 +649,10 @@ def apply_ui_config(config: Dict):
 
 
 def normalized_weights_from_ui() -> Dict[str, float]:
-    keys = active_criteria()
-    raw = {key: float(st.session_state.get(weight_state_key(key), 0.0)) for key in keys}
-    total = sum(raw.values())
-    if total <= 0:
-        return PRIORITY_WEIGHTS.copy()
-    return {key: value / total for key, value in raw.items()}
+    if st.session_state.get("urgency", False):
+        return PRIORITY_ROC_WEIGHTS_FULL.copy()
+
+    return PRIORITY_WEIGHTS.copy()
 
 
 def clear_run_state():
@@ -674,11 +672,11 @@ def build_api_payload() -> Dict:
     return {
         "scheduler_type": st.session_state.scheduler_type,
         "allocator_type": st.session_state.allocator_type,
-        "num_staff": int(st.session_state.num_staff),
-        "quota_limit": int(st.session_state.quota_limit),
-        "total_requests": int(st.session_state.total_requests),
+        "num_staff": int(st.session_state.get("num_staff", DEFAULT_STATE["num_staff"])),
+        "quota_limit": int(st.session_state.get("quota_limit", DEFAULT_STATE["quota_limit"])),
+        "total_requests": int(st.session_state.get("total_requests", DEFAULT_STATE["total_requests"])),
         "urgency_base": 8 if st.session_state.peak_mode else 5,
-        "imbalance_factor": int(st.session_state.imbalance_factor),
+        "imbalance_factor": int(st.session_state.get("imbalance_factor", DEFAULT_STATE["imbalance_factor"])),
         "num_absent_staff": int(st.session_state.num_absent_staff) if st.session_state.enable_absence else 0,
         "random_seed": manual_seed,
         "work_start": st.session_state.work_start_time.strftime("%H:%M"),
@@ -1468,29 +1466,38 @@ def render_sidebar_controls():
     st.time_input("Workday End", key="work_end_time")
 
     st.subheader("📥 Demand")
+
+    if "total_requests" not in st.session_state:
+        st.session_state.total_requests = DEFAULT_STATE["total_requests"]
+
     st.checkbox(
         "Disable Generated Requests",
         value=False,
         key="disable_generated_requests",
         help="If enabled, only custom requests stored in the database are simulated."
     )
+
     def on_peak_mode_change():
         if st.session_state.peak_mode:
             st.session_state.previous_total_requests = st.session_state.total_requests
             st.session_state.total_requests = 300
         else:
             if "previous_total_requests" in st.session_state:
-                st.session_state.total_requests = st.session_state.previous_total_requests
+                st.session_state.total_requests = (
+                    st.session_state.previous_total_requests
+                )
 
-    if not st.session_state.disable_generated_requests:
-        st.slider(
-            "Total Daily Requests",
-            min_value=50,
-            max_value=500,
-            step=10,
-            key="total_requests",
-            disabled=st.session_state.peak_mode,
-        )
+    st.slider(
+        "Total Daily Requests",
+        min_value=50,
+        max_value=500,
+        step=10,
+        key="total_requests",
+        disabled=(
+            st.session_state.peak_mode
+            or st.session_state.disable_generated_requests
+        ),
+    )
 
     st.subheader("Custom Requests")
     with st.expander("🛠️ Custom Request Manager", expanded=False):
@@ -2005,17 +2012,26 @@ gen_m = results.get("generated_metrics", {"avg_waiting_time_hours": 0.0, "avg_tu
 custom_count = custom_m.get("total_processed", 0)
 gen_count = gen_m.get("total_processed", 0)
 
+all_requests = results.get("generated_requests", [])
+
+submitted_custom = sum(1 for req in all_requests if req.get("is_custom"))
+submitted_generated = sum(1 for req in all_requests if not req.get("is_custom"))
+
 k1, k2, k3, k4, k5 = st.columns(5)
+
 with k1:
     processed = gen_count + custom_count
-    expected = int(st.session_state.total_requests) + custom_count
+    expected = submitted_generated + submitted_custom
+
     pct = (processed / expected * 100.0) if expected > 0 else 0.0
-    if custom_count > 0:
-        delta_str = f"{gen_count} Gen | {custom_count} Cust"
+
+    if submitted_custom > 0:
+        delta_str = f"{gen_count} Gen | {custom_count}/{submitted_custom} Cust"
     else:
         delta_str = f"{pct:.0f}%"
+
     if st.session_state.get("disable_generated_requests", False):
-        st.metric("Total Processed", f"{processed} Custom", delta_str)
+        st.metric("Total Processed", f"{processed}/{expected} Custom", delta_str)
     else:
         st.metric("Total Processed", f"{processed}/{expected}", delta_str)
 with k2:
@@ -3003,7 +3019,7 @@ if st.session_state.comparison_df is not None and comparison_details:
                     change_df = change_df.sort_values(
                         by=["_abs_shift", "Request"], ascending=[False, True]
                     ).drop(columns=["_abs_shift"])
-                    render_theme_table(change_df.head(25), height_px=320)
+                    render_theme_table(change_df, height_px=400)
 
 
 # ============================================================================
@@ -3028,7 +3044,7 @@ if engine.completed:
                 "submission_time": req.submission_time.isoformat(),
                 "assignment_time": req.assignment_time.isoformat() if req.assignment_time else None,
                 "completion_time": req.completion_time.isoformat() if req.completion_time else None,
-                "queue_wait_hours": round(req.get_waiting_time_minutes() or 0.0 / 60.0, 4),
+                "queue_wait_hours": round((req.get_waiting_time_minutes() or 0.0) / 60.0, 4),
                 "turnaround_days": round(req.get_turnaround_time_minutes() / 1440.0, 4),
                 "assigned_staff": req.assigned_staff,
             }
