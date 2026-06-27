@@ -1125,10 +1125,16 @@ class SimulationEngine:
         current_time = self._next_working_start(current_time)
 
         while index < len(arrivals) or pending or not_ready:
+            # Add all requests that have already arrived by the current time.
             while index < len(arrivals) and arrivals[index].submission_time <= current_time:
                 req = arrivals[index]
-                self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_arrived")
-                
+                self._log_event(
+                    req.submission_time,
+                    "ARRIVAL",
+                    request=req,
+                    details="request_arrived",
+                )
+
                 not_ready.append(req)
                 self._log_event(
                     req.submission_time,
@@ -1138,44 +1144,143 @@ class SimulationEngine:
                 )
                 index += 1
 
-            ready_now = [req for req in not_ready if self._is_request_ready(req, current_time)]
+            # Move newly ready requests into the pending FCFS queue.
+            ready_now = [
+                req for req in not_ready
+                if self._is_request_ready(req, current_time)
+            ]
             for req in ready_now:
                 not_ready.remove(req)
                 pending.append(req)
 
+            # If nothing is ready, advance to the next arrival or readiness time.
             if not pending:
-                next_arrival_time = arrivals[index].submission_time if index < len(arrivals) else None
+                next_arrival_time = (
+                    arrivals[index].submission_time
+                    if index < len(arrivals)
+                    else None
+                )
                 next_ready_time = min(
                     (req.ready_time for req in not_ready if req.ready_time),
                     default=None,
                 )
+
                 if next_arrival_time is None and next_ready_time is None:
                     break
-                candidate_times = [t for t in [next_arrival_time, next_ready_time] if t is not None]
-                current_time = min(candidate_times)
-                current_time = self._next_working_start(current_time)
+
+                candidate_times = [
+                    t for t in [next_arrival_time, next_ready_time]
+                    if t is not None
+                ]
+                current_time = self._next_working_start(min(candidate_times))
                 continue
 
-            next_req = min(
+            fcfs_order = sorted(
                 pending,
-                key=lambda r: (r.submission_time, r.ready_time or r.submission_time, r.request_id),
+                key=lambda r: (
+                    r.submission_time,
+                    r.ready_time or r.submission_time,
+                    r.request_id,
+                ),
             )
-            pending.remove(next_req)
-            reference_time = max(current_time, next_req.ready_time or next_req.submission_time)
-            selected = self._select_assignment(next_req, reference_time=reference_time)
-            if selected is None:
-                self.waiting_queue.append(next_req)
-                self._log_event(
-                    reference_time,
-                    "WAITING",
-                    request=next_req,
-                    details="no_eligible_staff",
+
+            selected_tuple = None
+
+            # Fix:
+            # Do not let one blocked FCFS request jump the whole clock to a future day.
+            # First, try to assign any pending FCFS request that can be assigned NOW.
+            for req in fcfs_order:
+                reference_time = max(
+                    current_time,
+                    req.ready_time or req.submission_time,
                 )
+
+                selected = self._select_assignment(
+                    req,
+                    reference_time=reference_time,
+                    exact_time=current_time,
+                )
+
+                if selected is None:
+                    continue
+
+                staff, assignment_time, mode = selected
+                selected_tuple = (req, staff, assignment_time, mode)
+                break
+
+            if selected_tuple is not None:
+                req, staff, assignment_time, mode = selected_tuple
+                pending.remove(req)
+                self._assign_request(req, staff, assignment_time, mode)
+
+                # Keep processing other ready requests at the same simulation time
+                # so other colleges/staff can still fill remaining same-day quota.
+                current_time = max(current_time, assignment_time)
                 continue
 
-            staff, assignment_time, mode = selected
-            self._assign_request(next_req, staff, assignment_time, mode)
-            current_time = max(current_time, assignment_time)
+            # If no pending request can be assigned now, advance only to the
+            # earliest meaningful future event.
+            next_arrival_time = (
+                arrivals[index].submission_time
+                if index < len(arrivals)
+                else None
+            )
+            next_ready_time = min(
+                (req.ready_time for req in not_ready if req.ready_time),
+                default=None,
+            )
+
+            next_slot_time = None
+            for req in fcfs_order:
+                reference_time = max(
+                    current_time,
+                    req.ready_time or req.submission_time,
+                )
+
+                selected = self._select_assignment(
+                    req,
+                    reference_time=reference_time,
+                )
+
+                if selected is None:
+                    continue
+
+                _, slot_time, _ = selected
+                if next_slot_time is None or slot_time < next_slot_time:
+                    next_slot_time = slot_time
+
+            if (
+                next_arrival_time is None
+                and next_ready_time is None
+                and next_slot_time is None
+            ):
+                for req in pending:
+                    self.waiting_queue.append(req)
+                    self._log_event(
+                        current_time,
+                        "WAITING",
+                        request=req,
+                        details="no_eligible_staff",
+                    )
+
+                for req in not_ready:
+                    self.waiting_queue.append(req)
+                    self._log_event(
+                        current_time,
+                        "WAITING",
+                        request=req,
+                        details="pending_requirements_or_payment",
+                    )
+
+                pending.clear()
+                not_ready.clear()
+                break
+
+            candidate_times = [
+                t for t in [next_arrival_time, next_ready_time, next_slot_time]
+                if t is not None
+            ]
+            current_time = self._next_working_start(min(candidate_times))
 
     def _run_weighted(self, requests: List[DocumentRequest]):
         arrivals = sorted(requests, key=lambda r: (r.submission_time, r.request_id))
@@ -1191,13 +1296,15 @@ class SimulationEngine:
         current_time = self._next_working_start(current_time)
 
         while index < len(arrivals) or pending or not_ready:
-            if not pending and not_ready and index < len(arrivals):
-                current_time = max(current_time, arrivals[index].submission_time)
-
             while index < len(arrivals) and arrivals[index].submission_time <= current_time:
                 req = arrivals[index]
-                self._log_event(req.submission_time, "ARRIVAL", request=req, details="request_arrived")
-                
+                self._log_event(
+                    req.submission_time,
+                    "ARRIVAL",
+                    request=req,
+                    details="request_arrived",
+                )
+
                 not_ready.append(req)
                 self._log_event(
                     req.submission_time,
@@ -1219,11 +1326,15 @@ class SimulationEngine:
                     (req.ready_time for req in not_ready if req.ready_time),
                     default=None,
                 )
+
                 if next_arrival_time is None and next_ready_time is None:
                     break
-                candidate_times = [t for t in [next_arrival_time, next_ready_time] if t is not None]
-                current_time = min(candidate_times)
-                current_time = self._next_working_start(current_time)
+
+                candidate_times = [
+                    t for t in [next_arrival_time, next_ready_time]
+                    if t is not None
+                ]
+                current_time = self._next_working_start(min(candidate_times))
                 continue
 
             ranked = self.scheduler.rank(
@@ -1245,11 +1356,15 @@ class SimulationEngine:
 
             selected_tuple: Optional[Tuple[DocumentRequest, StaffMember, datetime, str]] = None
 
-            # Pick highest-priority request that is assignable right now.
             for req in ranked:
-                candidate = self._select_assignment(req, reference_time=current_time, exact_time=current_time)
+                candidate = self._select_assignment(
+                    req,
+                    reference_time=current_time,
+                    exact_time=current_time,
+                )
                 if candidate is None:
                     continue
+
                 staff, assignment_time, mode = candidate
                 selected_tuple = (req, staff, assignment_time, mode)
                 break
@@ -1261,7 +1376,6 @@ class SimulationEngine:
                 self._assign_request(req, staff, assignment_time, mode)
                 continue
 
-            # Nothing assignable now. Advance to next event (arrival, readiness, or future slot).
             next_arrival_time = arrivals[index].submission_time if index < len(arrivals) else None
             next_ready_time = min(
                 (req.ready_time for req in not_ready if req.ready_time),
@@ -1273,12 +1387,12 @@ class SimulationEngine:
                 candidate = self._select_assignment(req, reference_time=current_time)
                 if candidate is None:
                     continue
+
                 _, slot_time, _ = candidate
                 if next_slot_time is None or slot_time < next_slot_time:
                     next_slot_time = slot_time
 
             if next_arrival_time is None and next_ready_time is None and next_slot_time is None:
-                # Remaining pending requests are impossible to route.
                 for req in pending:
                     self.scheduler.remove_request(req)
                     self.waiting_queue.append(req)
@@ -1288,6 +1402,7 @@ class SimulationEngine:
                         request=req,
                         details="no_eligible_staff",
                     )
+
                 for req in not_ready:
                     self.waiting_queue.append(req)
                     self._log_event(
@@ -1296,15 +1411,16 @@ class SimulationEngine:
                         request=req,
                         details="pending_requirements_or_payment",
                     )
+
                 pending.clear()
                 not_ready.clear()
                 break
 
             candidate_times = [
-                t for t in [next_arrival_time, next_ready_time, next_slot_time] if t is not None
+                t for t in [next_arrival_time, next_ready_time, next_slot_time]
+                if t is not None
             ]
-            current_time = min(candidate_times)
-            current_time = self._next_working_start(current_time)
+            current_time = self._next_working_start(min(candidate_times))
 
     # ---------------------------------------------------------------------
     # Metrics and public run API
