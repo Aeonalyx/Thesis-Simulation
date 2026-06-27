@@ -16,7 +16,7 @@ def main():
     
     # Verify file existence before running
     if not os.path.exists("api.py"):
-        print("Error: app1.py not found in the root directory!")
+        print("Error: api.py not found in the root directory!")
         sys.exit(1)
     if not os.path.exists(os.path.join("frontend1", "app1.py")):
         print("Error: frontend/app.py not found!")

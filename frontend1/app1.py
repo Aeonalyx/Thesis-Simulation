@@ -1327,7 +1327,7 @@ def render_custom_request_manager():
             st.error(f"Error connecting to backend: {e}")
 
     if custom_reqs:
-        st.markdown("### 📋 Existing Custom Requests")
+        st.markdown("### Existing Custom Requests")
         custom_df = pd.DataFrame([
             {
                 "ID": r["request_id"],
@@ -1343,7 +1343,7 @@ def render_custom_request_manager():
         st.dataframe(custom_df, use_container_width=True)
 
         to_delete = st.selectbox("Select Request ID to Delete", options=[r["request_id"] for r in custom_reqs], key="c_req_to_delete")
-        if st.button("🗑️ Delete Selected Request", use_container_width=True, key="c_req_del_btn"):
+        if st.button("Delete Selected Request", use_container_width=True, key="c_req_del_btn"):
             try:
                 del_res = requests.delete(f"{BACKEND_URL}/api/custom-requests/{to_delete}", timeout=5)
                 if del_res.status_code == 200:
@@ -1355,7 +1355,7 @@ def render_custom_request_manager():
             except Exception as e:
                 st.error(f"Error: {e}")
 
-        if st.button("💥 Clear All Requests", use_container_width=True, key="c_req_clear_btn"):
+        if st.button("Clear All Requests", use_container_width=True, key="c_req_clear_btn"):
             try:
                 clear_res = requests.delete(f"{BACKEND_URL}/api/custom-requests", timeout=5)
                 if clear_res.status_code == 200:
@@ -1372,11 +1372,11 @@ def render_custom_request_manager():
 
 @st.fragment
 def render_sidebar_controls():
-    st.header("🎛️ Simulation Controls")
+    st.header("Simulation Controls")
 
     run_col, reset_col = st.columns(2)
-    run_clicked = run_col.button("🚀 Run", use_container_width=True)
-    reset_clicked = reset_col.button("🧹 Reset", use_container_width=True)
+    run_clicked = run_col.button("Run", use_container_width=True)
+    reset_clicked = reset_col.button("Reset", use_container_width=True)
 
     if reset_clicked:
         clear_run_state()
@@ -1395,7 +1395,7 @@ def render_sidebar_controls():
         format_func=lambda value: ALLOCATOR_LABELS.get(value, value.replace("_", " ").title()),
     )
     if st.session_state.scheduler_type == "WEIGHTED":
-        with st.expander("📊 Priority Weights", expanded=False):
+        with st.expander("Priority Weights", expanded=False):
 
             st.subheader("Weighted Priority")
 
@@ -1436,7 +1436,7 @@ def render_sidebar_controls():
 
     max_absent_staff = max(0, int(st.session_state.num_staff) - 1)
     st.checkbox(
-        "🤒 Enable Staff Absence",
+        "Enable Staff Absence",
         key="enable_absence",
         disabled=(max_absent_staff == 0),
         help="Turn on to model staff being absent during the run.",
@@ -1465,7 +1465,7 @@ def render_sidebar_controls():
     st.time_input("Workday Start", key="work_start_time")
     st.time_input("Workday End", key="work_end_time")
 
-    st.subheader("📥 Demand")
+    st.subheader("Demand")
 
     if "total_requests" not in st.session_state:
         st.session_state.total_requests = DEFAULT_STATE["total_requests"]
@@ -1500,13 +1500,13 @@ def render_sidebar_controls():
     )
 
     st.subheader("Custom Requests")
-    with st.expander("🛠️ Custom Request Manager", expanded=False):
+    with st.expander("Custom Request Manager", expanded=False):
         render_custom_request_manager()
     st.subheader("Features")
-    st.checkbox("⚡ Enable Urgency", value=False, key="urgency")
+    st.checkbox("Enable Urgency", value=False, key="urgency")
 
-    st.checkbox("📈 Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change,)
-    st.slider("⚖️ College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
+    st.checkbox("Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change,)
+    st.slider("College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
 
     st.subheader("Seed")
     st.radio("Seed Mode", ["Auto", "Manual"], key="seed_mode", horizontal=True)
@@ -1546,7 +1546,7 @@ def render_sidebar_controls():
             st.warning("Enter a preset name before saving.")
 
     if st.session_state.simulation_engine is not None:
-        with st.expander("🐛 Debug: Urgency Status", expanded=False):
+        with st.expander("Debug: Urgency Status", expanded=False):
             st.markdown(f"**Checkbox State:** `{st.session_state.urgency}`")
             st.markdown(f"**ROC Weight for Urgency:** `{PRIORITY_WEIGHTS.get('urgency', 'N/A')}`")
                 
