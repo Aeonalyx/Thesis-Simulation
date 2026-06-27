@@ -1861,6 +1861,9 @@ def render_playback_section(results, engine):
         routing_event_label = str(current_event.get("event_type", "")).replace("_", " ").title()
         routing_detail_label = str(current_event.get("details", "")).replace("_", " ").title()
 
+        routing_event_label = str(current_event.get("event_type", "")).replace("_", " ").title()
+        routing_detail_label = str(current_event.get("details", "")).replace("_", " ").title()
+
         st.markdown(
             "**Current Routing Decision:** "
             f"{routing_event_label} | "
@@ -2713,6 +2716,7 @@ if st.button("Run Comparison Across Selected Variants", use_container_width=True
 
 
 if st.session_state.comparison_df is not None:
+    # Prepare display dataframe from the stored comparison results
     compare_df = st.session_state.comparison_df.copy()
 
     ALLOCATOR_LABELS = {

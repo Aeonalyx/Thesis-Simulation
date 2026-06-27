@@ -1,0 +1,23 @@
+{
+  "base": {
+    "scheduler_type": "FCFS",
+    "allocator_type": "college_based",
+    "scenario": "baseline",
+    "num_staff": 6,
+    "quota_limit": 20,
+    "total_requests": 200,
+    "urgency_base": 5,
+    "imbalance_factor": 0,
+    "num_absent_staff": 0,
+    "work_start": "08:00",
+    "work_end": "17:00",
+    "seed_mode": "Auto",
+    "manual_seed": 1,
+    "weights_raw": {
+      "urgency": 40,
+      "requester_type": 25,
+      "waiting_time": 20,
+      "document_type": 15
+    }
+  }
+}
