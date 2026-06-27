@@ -1,25 +1,19 @@
 """
-Flask Backend API for Thesis Simulation Engine
-Wraps the scheduler_engine1.py with REST endpoints for running simulations
+Flask Backend API for Thesis Simulation Engine (Refactored)
+Runs outside the backend1 folder in the main workspace directory.
 """
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-try:
-    # Works when run from workspace root as a package
-    from backend1.scheduler_engine1 import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
-    from backend1.roc_utils import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
-except ImportError:
-    # Works when run directly from backend1/ as a script
-    from scheduler_engine1 import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
-    from roc_utils import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
+import sqlite3
+import os
 
+from backend import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
+from backend.roc_utils import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend access
 
-import sqlite3
-import os
 
 def get_db_connection():
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -80,7 +74,7 @@ def get_staff_info(engine):
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
-    return jsonify({"status": "ok", "message": "Thesis Simulation Backend Running"})
+    return jsonify({"status": "ok", "message": "Thesis Simulation Refactored Backend Running"})
 
 
 @app.route('/config', methods=['GET'])
@@ -103,32 +97,6 @@ def get_config():
 def run_simulation():
     """
     Run a simulation with custom parameters
-    
-    Request JSON (all optional):
-    {
-        "scheduler_type": "FCFS",
-        "allocator_type": "college_based",
-        "scenario": "baseline",
-        "num_staff": 6,
-        "quota_limit": 20,
-        "total_requests": 200,
-        "urgency_base": 5,
-        "imbalance_factor": 0,
-        "num_absent_staff": 0,
-        "random_seed": 12345,
-        "work_start": "08:00",
-        "work_end": "17:00",
-        "priority_weights": {
-            "completeness_of_requirements": 0.30,
-            "submission_time": 0.22,
-            "document_type": 0.18,
-            "requester_status": 0.14,
-            "college_affiliation": 0.10,
-            "payment_status": 0.06
-        }
-    }
-    
-    Returns: Simulation metrics and results
     """
     try:
         data = request.get_json() or {}
@@ -222,11 +190,6 @@ def run_simulation():
 def run_quick_simulation():
     """
     Run a quick baseline simulation (default parameters)
-    
-    Request JSON (optional):
-    {
-        "num_requests": 80  (optional)
-    }
     """
     try:
         data = request.get_json() or {}
@@ -261,15 +224,6 @@ def run_quick_simulation():
 def compare_allocators():
     """
     Compare different allocator strategies on same scenario
-    
-    Request JSON:
-    {
-        "scenario": "baseline",
-        "num_staff": 6,
-        "quota_limit": 20
-    }
-    
-    Returns: Results for all 4 allocator types
     """
     try:
         data = request.get_json() or {}
@@ -338,7 +292,7 @@ def api_info():
     """Get API documentation and available endpoints"""
     return jsonify({
         "version": "1.0",
-        "name": "Thesis Simulation Backend",
+        "name": "Thesis Simulation Refactored Backend",
         "endpoints": {
             "GET /health": "Health check",
             "GET /config": "Get simulation configuration",
@@ -552,7 +506,7 @@ def server_error(error):
 if __name__ == '__main__':
     print("""
     ===================================================================
-    Thesis Simulation Backend API
+    Thesis Simulation Backend API (Refactored)
     ===================================================================
     
     Server running on: http://localhost:5000

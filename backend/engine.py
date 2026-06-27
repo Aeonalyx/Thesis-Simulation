@@ -1,386 +1,36 @@
 """
-Core simulation engine for registrar scheduling experiments.
-
-Implements:
-- FCFS and Weighted schedulers
-- 4 allocator strategies (college_based, workload_based, pooled, quota_free)
-- Working-hours rollover (default 08:00 to 17:00)
-- Daily quota enforcement (except quota_free)
-- Event log generation for step-by-step frontend playback
-- Deterministic random seed support for reproducibility
+engine.py
+Defines the main SimulationEngine class.
 """
 
 from datetime import datetime, timedelta, date
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
-import re
 import random
-try:
-    # Works when run from workspace root as a package
-    from backend1.roc_utils import (
-        PRIORITY_ROC_WEIGHTS,
-        PRIORITY_ROC_WEIGHTS_BASE,
-        PRIORITY_ROC_WEIGHTS_FULL,
-    )
-except ImportError:
-    # Works when run directly from backend1/ as a script
-    from roc_utils import (
-        PRIORITY_ROC_WEIGHTS,
-        PRIORITY_ROC_WEIGHTS_BASE,
-        PRIORITY_ROC_WEIGHTS_FULL,
-    )
+import re
+from typing import Dict, List, Optional, Tuple
 
-# ============================================================================
-# DEFAULT CONFIGURATION
-# ============================================================================
+from .config import (
+    PRIORITY_WEIGHTS,
+    REQUESTER_PRIORITY,
+    REQUESTER_GENERATION_WEIGHTS,
+    REQUESTER_PRIORITY_MAX,
+    PRIORITY_SCORE_HALF_LIFE,
+    DOCUMENT_COMPLEXITY,
+    DOCUMENT_REQUESTER_RESTRICTIONS,
+    DOCUMENT_PAYMENT_REQUIRED,
+    COLLEGES,
+    COLLEGE_POPULATION,
+    COMPLETENESS_LEVELS,
+    REQUIREMENTS_PARTIAL_DELAY_HOURS_RANGE,
+    REQUIREMENTS_COMPLETE_EXTRA_DELAY_HOURS_RANGE,
+    PAYMENT_DELAY_HOURS_RANGE,
+    COLLEGE_PRIORITY,
+    _soft_cap,
+    _duration_to_schedule,
+)
+from .models import DocumentRequest, StaffMember
+from .schedulers import FCFSScheduler, WeightedPriorityScheduler
+from .roc_utils import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
 
-# from backend1.roc_utils import (
-#     urgency_weight,
-#     requester_type_weight,
-#     waiting_time_weight,
-#     document_type_weight,
-# )
-PRIORITY_WEIGHTS = PRIORITY_ROC_WEIGHTS
-# PRIORITY_WEIGHTS = {
-#     "urgency": 0.40,
-#     "requester_type": 0.25,
-#     "waiting_time": 0.20,
-#     "document_type": 0.15,
-# }
-
-REQUESTER_PRIORITY = {
-    "Graduating Student": 1,
-    "Faculty": 1,
-    "Alumni": 1,
-    "Regular Student": 1,
-}
-
-# Not made to match data from Student Population 2025-2026 Semester 2 from OUR, slightly adjusted
-
-REQUESTER_GENERATION_WEIGHTS = {
-    "Regular Student": 0.65,
-    "Graduating Student": 0.18,
-    "Alumni": 0.10,
-    "Faculty": 0.07,
-}
-REQUESTER_PRIORITY_MAX = max(REQUESTER_PRIORITY.values()) if REQUESTER_PRIORITY else 1
-
-# Controls the final priority score soft-cap (lower raises scores faster).
-PRIORITY_SCORE_HALF_LIFE = 0.15
-
-# Durations can be workdays (number) or strings like "2 day" / "18 hour".
-DOCUMENT_COMPLEXITY = {
-    "Certification, Authentication and Verification (CAV)": "3 days",
-    "Official Transcript of Records (TOR) and Transfer Credentials (TC)": "3 days",
-    "Certification": "1 day",
-    "Diploma": "4 hours",
-    "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)": "4 hours",
-    "Permit to Cross-Enrol": "1 hour",
-    "Authentication": "4 hours",
-    "Academic Load Revision (ALRP)": "1 hour",
-    "Grading Sheets": "1 day",
-    "Shifter’s Form, Returnee’s Form or Leave of Absence": "1 day",
-    "Completion Forms": "1 day",
-    "Advance Credit": "1 day",
-    "Registration of Old and Returnee Students": "1 hour",
-}
-
-DOCUMENT_REQUESTER_RESTRICTIONS = {
-    "Certification, Authentication and Verification (CAV)": ["Graduating Student", "Alumni"],
-    "Official Transcript of Records (TOR) and Transfer Credentials (TC)": ["Alumni"],
-    "Certification": ["Alumni"],
-    "Diploma": ["Alumni"],
-    "Evaluation of Grades; Report of Grades (ROG); Certificate of Registration (COR)": [
-        "Graduating Student",
-        "Alumni",
-        "Regular Student",
-    ],
-    "Permit to Cross-Enrol": ["Graduating Student", "Alumni", "Regular Student"],
-    "Authentication": ["Graduating Student", "Alumni", "Regular Student"],
-    "Academic Load Revision (ALRP)": ["Regular Student"],
-    "Grading Sheets": ["Faculty"],
-    "Shifter’s Form, Returnee’s Form or Leave of Absence": ["Regular Student"],
-    "Completion Forms": ["Faculty"],
-    "Registration of Old and Returnee Students": ["Regular Student"],
-}
-
-DOCUMENT_PAYMENT_REQUIRED = {
-    "Grading Sheets": False,
-}
-
-COLLEGES = ["COE", "CED", "CASS", "CSM", "CEBA", "CCS", "CHS"]
-
-# COE 3236
-# CED 2533
-# CASS 2515
-# CSM 2047
-# CEBA 1296
-# CCS 1037
-# CHS 520
-# Total = 13,184, 13881 if including other colleges as per Student Population 2025-2026 Semester 2 from OUR
-
-COLLEGE_POPULATION = {
-    "COE": 0.2454,
-    "CED": 0.1921,
-    "CASS": 0.1908,
-    "CSM": 0.1553,
-    "CEBA": 0.0983,
-    "CCS": 0.0787,
-    "CHS": 0.0394,
-}
-
-COMPLETENESS_LEVELS = {
-    "incomplete": 0.3,
-    "partial": 0.7,
-    "complete": 1.0,
-}
-REQUIREMENTS_PARTIAL_DELAY_HOURS_RANGE = (0.0, 0.2) # up to 12 minutes for partial requirements
-REQUIREMENTS_COMPLETE_EXTRA_DELAY_HOURS_RANGE = (0.0, 1.0) # up to 1 hour after partial for complete requirements
-PAYMENT_DELAY_HOURS_RANGE = (0.0, 24.0) # up to 2 days for payment after submission (if required)
-
-
-def _build_college_priority() -> Dict[str, float]:
-    raw: Dict[str, float] = {}
-    for college in COLLEGES:
-        population = float(COLLEGE_POPULATION.get(college, 0.0))
-        population = max(population, 0.01)
-        raw[college] = 1.0 / population
-    max_score = max(raw.values()) if raw else 1.0
-    return {college: score / max_score for college, score in raw.items()}
-
-
-COLLEGE_PRIORITY = _build_college_priority()
-
-_DURATION_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(day|days|hour|hours)\s*$", re.IGNORECASE)
-
-
-def _soft_cap(value: float, half_life: float) -> float:
-    """Smoothly compress toward 1.0 as value grows; equals 0.5 at half_life."""
-    safe_half_life = max(float(half_life), 1e-6)
-    return float(value) / (float(value) + safe_half_life)
-
-
-def _duration_to_schedule(value: object) -> Tuple[timedelta, bool]:
-    """Return (duration, use_work_hours). Days use calendar time; hours use work hours."""
-    if isinstance(value, (int, float)):
-        return timedelta(days=float(value)), False
-    if not isinstance(value, str):
-        return timedelta(days=1.0), False
-    match = _DURATION_PATTERN.match(value)
-    if not match:
-        return timedelta(days=1.0), False
-    amount = float(match.group(1))
-    unit = match.group(2).lower()
-    if unit.startswith("day"):
-        return timedelta(days=amount), False
-    return timedelta(hours=amount), True
-
-
-# ============================================================================
-# DATA CLASSES
-# ============================================================================
-
-@dataclass
-class DocumentRequest:
-    request_id: str
-    college: str
-    document_type: str
-    urgency: int
-    requester_type: str
-    submission_time: datetime
-    completeness_of_requirements: float = 1.0
-    payment_status: str = "Paid"
-    requirements_stage: str = "complete"
-    requirements_partial_time: Optional[datetime] = None
-    requirements_complete_time: Optional[datetime] = None
-    payment_time: Optional[datetime] = None
-    ready_time: Optional[datetime] = None
-
-    priority_score: float = 0.0
-    assignment_time: Optional[datetime] = None
-    completion_time: Optional[datetime] = None
-    assigned_staff: Optional[str] = None
-    is_custom: bool = False
-
-    def calculate_priority(
-        self,
-        current_time: datetime,
-        weights: Dict[str, float],
-        workday_minutes: int,
-        urgency: bool = False,
-    ) -> float:
-        """Compute weighted priority score for this request at current_time."""
-        self.update_status(current_time)
-        completeness_norm = max(0.0, min(float(self.completeness_of_requirements), 1.0))
-
-        requester_raw = REQUESTER_PRIORITY.get(self.requester_type, 3)
-        requester_norm = requester_raw / max(float(REQUESTER_PRIORITY_MAX), 1.0)
-
-        waiting_minutes = max(
-            0.0,
-            (current_time - self.submission_time).total_seconds() / 60.0,
-        )
-        submission_norm = _soft_cap(waiting_minutes, max(float(workday_minutes * 2), 1.0))
-
-        base_duration, _ = _duration_to_schedule(
-            DOCUMENT_COMPLEXITY.get(self.document_type, 1)
-        )
-        complexity_days = max(base_duration.total_seconds() / 86400.0, 1e-6)
-        doc_norm = 1.0 / (1.0 + complexity_days)
-
-        college_norm = float(COLLEGE_PRIORITY.get(self.college, 0.5))
-
-        payment_norm = 0.0
-        if isinstance(self.payment_status, str):
-            status_text = self.payment_status.strip().lower()
-            if status_text in {"paid", "settled", "complete", "cleared", "yes", "y", "true", "1"}:
-                payment_norm = 1.0
-        else:
-            payment_norm = 1.0 if bool(self.payment_status) else 0.0
-
-        urgency_norm = float(self.urgency) / 10.0 if urgency else 0.0
-
-        scores = {
-            "completeness_of_requirements": completeness_norm,
-            "submission_time": submission_norm,
-            "document_type": doc_norm,
-            "requester_status": requester_norm,
-            "college_affiliation": college_norm,
-            "payment_status": payment_norm,
-            "urgency": urgency_norm
-        }
-
-        total_score = 0.0
-        for key, weight in weights.items():
-            if key == "urgency" and not urgency:
-                continue
-            total_score += float(weight) * scores.get(key, 0.0)
-
-        self.priority_score = _soft_cap(total_score, PRIORITY_SCORE_HALF_LIFE)
-        return self.priority_score
-
-    def _requirements_stage_at(self, current_time: datetime) -> str:
-        if self.requirements_partial_time and current_time < self.requirements_partial_time:
-            return "incomplete"
-        if self.requirements_complete_time and current_time < self.requirements_complete_time:
-            return "partial"
-        return "complete"
-
-    def _payment_status_at(self, current_time: datetime) -> str:
-        if self.payment_time is None:
-            return self.payment_status
-        return "Paid" if current_time >= self.payment_time else "Unpaid"
-
-    def update_status(self, current_time: datetime):
-        stage = self._requirements_stage_at(current_time)
-        self.requirements_stage = stage
-        self.completeness_of_requirements = float(COMPLETENESS_LEVELS.get(stage, 1.0))
-        self.payment_status = self._payment_status_at(current_time)
-
-    def get_waiting_time_minutes(self) -> Optional[float]:
-        if self.assignment_time is None:
-            return None
-        return (self.assignment_time - self.submission_time).total_seconds() / 60.0
-
-    def get_turnaround_time_minutes(self) -> float:
-        if self.completion_time is None:
-            return 0.0
-        return (self.completion_time - self.submission_time).total_seconds() / 60.0
-
-    def to_dict(self) -> Dict:
-        return {
-            "request_id": self.request_id,
-            "college": self.college,
-            "document_type": self.document_type,
-            "urgency": self.urgency,
-            "requester_type": self.requester_type,
-            "completeness_of_requirements": round(float(self.completeness_of_requirements), 4),
-            "requirements_stage": self.requirements_stage,
-            "payment_status": self.payment_status,
-            "requirements_partial_time": self.requirements_partial_time.isoformat()
-            if self.requirements_partial_time
-            else None,
-            "requirements_complete_time": self.requirements_complete_time.isoformat()
-            if self.requirements_complete_time
-            else None,
-            "payment_time": self.payment_time.isoformat() if self.payment_time else None,
-            "ready_time": self.ready_time.isoformat() if self.ready_time else None,
-            "submission_time": self.submission_time.isoformat(),
-            "priority_score": round(self.priority_score, 4),
-            "assignment_time": self.assignment_time.isoformat() if self.assignment_time else None,
-            "completion_time": self.completion_time.isoformat() if self.completion_time else None,
-            "assigned_staff": self.assigned_staff,
-            "is_custom": self.is_custom,
-        }
-
-
-@dataclass
-class StaffMember:
-    staff_id: str
-    name: str
-    college_affiliation: str
-    quota_limit: int = 20
-
-    is_available: bool = True
-    total_assigned: int = 0
-    next_available_time: Optional[datetime] = None
-    daily_assigned: Dict[str, int] = field(default_factory=dict)
-
-    def reset_for_run(self, day_start: datetime):
-        self.total_assigned = 0
-        self.next_available_time = day_start
-        self.daily_assigned = {}
-
-    def assignments_on_day(self, day: date) -> int:
-        return self.daily_assigned.get(day.isoformat(), 0)
-
-    def increment_day_quota(self, day: date):
-        key = day.isoformat()
-        self.daily_assigned[key] = self.daily_assigned.get(key, 0) + 1
-
-
-# ============================================================================
-# SCHEDULERS (kept for structural clarity)
-# ============================================================================
-
-class FCFSScheduler:
-    def __init__(self):
-        self.queue: List[DocumentRequest] = []
-
-    def add_request(self, request: DocumentRequest):
-        self.queue.append(request)
-
-    def get_all_sorted(self) -> List[DocumentRequest]:
-        sorted_queue = sorted(self.queue, key=lambda r: (r.submission_time, r.request_id))
-        self.queue.clear()
-        return sorted_queue
-
-
-class WeightedPriorityScheduler:
-    def __init__(self):
-        self.pending: List[DocumentRequest] = []
-
-    def add_request(self, request: DocumentRequest):
-        self.pending.append(request)
-
-    def remove_request(self, request: DocumentRequest):
-        self.pending.remove(request)
-
-    def rank(
-        self,
-        current_time: datetime,
-        weights: Dict[str, float],
-        workday_minutes: int,
-        urgency: bool = False,
-    ) -> List[DocumentRequest]:
-        for req in self.pending:
-            req.calculate_priority(current_time, weights, workday_minutes, urgency)
-        return sorted(self.pending, key=lambda r: (-r.priority_score, r.submission_time, r.request_id))
-
-
-# ============================================================================
-# SIMULATION ENGINE
-# ============================================================================
 
 class SimulationEngine:
     def __init__(
@@ -440,7 +90,6 @@ class SimulationEngine:
         self.event_log: List[Dict] = []
         self._event_seq = 0
         self.absent_staff_ids: List[str] = []
-        
 
     # ---------------------------------------------------------------------
     # Time helpers
@@ -649,7 +298,7 @@ class SimulationEngine:
         merged["scenario"] = scenario
         merged["align_custom_dates"] = bool(incoming.get("align_custom_dates", False))
         merged["custom_requests"] = incoming.get("custom_requests", None)
-        
+
         # Parse simulation start date if configured
         sim_start_str = incoming.get("sim_start_date")
         if sim_start_str:
@@ -662,7 +311,7 @@ class SimulationEngine:
                 merged["sim_start_date"] = datetime.now().date()
         else:
             merged["sim_start_date"] = datetime.now().date()
-            
+
         return merged
 
     def _apply_staff_absence(self, num_absent_staff: int):
@@ -900,12 +549,10 @@ class SimulationEngine:
         exact_time: Optional[datetime] = None,
     ) -> Optional[Tuple[StaffMember, datetime, str]]:
         allocator = self.allocator_type
-        request_day = request.submission_time.date()
         earliest = max(reference_time, request.submission_time)
 
         same_college = self._same_college_staff(request.college)
         all_active = self._active_staff()
-        other_staff = [s for s in all_active if s.college_affiliation != request.college]
 
         if allocator == "college_based":
             if not same_college:
@@ -1508,7 +1155,7 @@ class SimulationEngine:
         # Load custom requests (from payload config or SQLite database)
         custom_requests = []
         custom_rows = []
-        
+
         # Check payload first
         payload_custom = config.get("custom_requests")
         if isinstance(payload_custom, list):
@@ -1519,7 +1166,14 @@ class SimulationEngine:
                 import sqlite3
                 import os
                 base_dir = os.path.dirname(os.path.abspath(__file__))
-                db_path = os.path.join(base_dir, 'custom_requests.db')
+                # Smart database path resolution:
+                # 1. Check parent directory (e.g. root dir when run as packages)
+                # 2. Check local package directory
+                parent_dir = os.path.dirname(base_dir)
+                db_path = os.path.join(parent_dir, 'custom_requests.db')
+                if not os.path.exists(db_path):
+                    db_path = os.path.join(base_dir, 'custom_requests.db')
+
                 if os.path.exists(db_path):
                     conn = sqlite3.connect(db_path)
                     conn.row_factory = sqlite3.Row
@@ -1543,7 +1197,7 @@ class SimulationEngine:
                             return datetime.combine(sim_date, time_str_val.time())
                         return time_str_val
                     time_str = str(time_str_val).strip()
-                    
+
                     is_just_time = False
                     if re.match(r'^\d{2}:\d{2}(:\d{2})?$', time_str):
                         is_just_time = True
@@ -1553,14 +1207,14 @@ class SimulationEngine:
                             is_just_time = True
                         except Exception:
                             pass
-                            
+
                     if is_just_time:
                         parts = time_str.split(':')
                         h = int(parts[0])
                         m = int(parts[1])
                         s = int(parts[2]) if len(parts) > 2 else 0
                         return datetime.combine(sim_date, datetime.min.time().replace(hour=h, minute=m, second=s))
-                    
+
                     try:
                         dt = datetime.fromisoformat(time_str)
                         if align_custom_dates:
