@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 CUSTOM_REQUEST_FIELDS_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
+    "data",
     "custom_request_fields.json",
 )
 
@@ -124,6 +125,7 @@ def save_custom_request_fields(fields: List[Dict[str, Any]]):
         seen.add(normalized["key"])
         normalized_fields.append(normalized)
 
+    os.makedirs(os.path.dirname(CUSTOM_REQUEST_FIELDS_FILE), exist_ok=True)
     with open(CUSTOM_REQUEST_FIELDS_FILE, "w", encoding="utf-8") as handle:
         json.dump(normalized_fields, handle, indent=2)
 

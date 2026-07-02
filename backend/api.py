@@ -1,15 +1,17 @@
 """
-Flask Backend API for Thesis Simulation Engine
-Wraps the scheduler_engine1.py with REST endpoints for running simulations
+Flask API for the thesis simulation engine.
+
+This is the backend entrypoint for simulation runs and persisted request /
+criteria configuration.
 """
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 try:
     # Works when run from workspace root as a package
-    from backend1.scheduler_engine1 import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
-    from backend1.roc_utils import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
-    from backend1.criteria_config import (
+    from backend.engine import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
+    from backend.roc import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
+    from backend.criteria import (
         SCORING_TYPE_LABELS,
         SOURCE_FIELD_LABELS,
         get_source_field_labels,
@@ -19,7 +21,7 @@ try:
         save_custom_criteria,
         slugify_key,
     )
-    from backend1.request_fields import (
+    from backend.request_fields import (
         RESERVED_FIELD_KEYS,
         load_custom_request_fields,
         normalize_field,
@@ -27,10 +29,10 @@ try:
         slugify_key as slugify_field_key,
     )
 except ImportError:
-    # Works when run directly from backend1/ as a script
-    from scheduler_engine1 import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
-    from roc_utils import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
-    from criteria_config import (
+    # Works when run directly from backend/ as a script
+    from engine import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
+    from roc import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
+    from criteria import (
         SCORING_TYPE_LABELS,
         SOURCE_FIELD_LABELS,
         get_source_field_labels,
@@ -57,7 +59,9 @@ import os
 
 def get_db_connection():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(base_dir, 'custom_requests.db')
+    data_dir = os.path.join(base_dir, "data")
+    os.makedirs(data_dir, exist_ok=True)
+    db_path = os.path.join(data_dir, 'custom_requests.db')
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn

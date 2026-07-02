@@ -11,15 +11,15 @@ import re
 from typing import Any, Dict, List
 
 try:
-    from backend1.roc_utils import priority_criteria_ranking
-    from backend1.request_fields import (
+    from backend.roc import priority_criteria_ranking
+    from backend.request_fields import (
         custom_request_field_labels,
         custom_request_field_options,
         score_custom_field_value,
         slugify_key as slugify_field_key,
     )
 except ImportError:
-    from roc_utils import priority_criteria_ranking
+    from roc import priority_criteria_ranking
     from request_fields import (
         custom_request_field_labels,
         custom_request_field_options,
@@ -28,7 +28,11 @@ except ImportError:
     )
 
 
-CUSTOM_CRITERIA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_criteria.json")
+CUSTOM_CRITERIA_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "data",
+    "custom_criteria.json",
+)
 
 BUILT_IN_LABELS = {
     "submission_time": "Submission time",
@@ -104,6 +108,7 @@ def load_custom_criteria() -> List[Dict[str, Any]]:
 
 
 def save_custom_criteria(criteria: List[Dict[str, Any]]):
+    os.makedirs(os.path.dirname(CUSTOM_CRITERIA_FILE), exist_ok=True)
     with open(CUSTOM_CRITERIA_FILE, "w", encoding="utf-8") as handle:
         json.dump(criteria, handle, indent=2)
 

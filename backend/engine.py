@@ -17,28 +17,28 @@ import re
 import random
 try:
     # Works when run from workspace root as a package
-    from backend1.roc_utils import (
+    from backend.roc import (
         PRIORITY_ROC_WEIGHTS,
         PRIORITY_ROC_WEIGHTS_BASE,
         PRIORITY_ROC_WEIGHTS_FULL,
     )
-    from backend1.criteria_config import load_custom_criteria, score_custom_criteria
-    from backend1.request_fields import load_custom_request_fields
+    from backend.criteria import load_custom_criteria, score_custom_criteria
+    from backend.request_fields import load_custom_request_fields
 except ImportError:
-    # Works when run directly from backend1/ as a script
-    from roc_utils import (
+    # Works when run directly from backend/ as a script
+    from roc import (
         PRIORITY_ROC_WEIGHTS,
         PRIORITY_ROC_WEIGHTS_BASE,
         PRIORITY_ROC_WEIGHTS_FULL,
     )
-    from criteria_config import load_custom_criteria, score_custom_criteria
+    from criteria import load_custom_criteria, score_custom_criteria
     from request_fields import load_custom_request_fields
 
 # ============================================================================
 # DEFAULT CONFIGURATION
 # ============================================================================
 
-# from backend1.roc_utils import (
+# from backend.roc import (
 #     urgency_weight,
 #     requester_type_weight,
 #     waiting_time_weight,
@@ -1595,7 +1595,7 @@ class SimulationEngine:
                 import sqlite3
                 import os
                 base_dir = os.path.dirname(os.path.abspath(__file__))
-                db_path = os.path.join(base_dir, 'custom_requests.db')
+                db_path = os.path.join(base_dir, 'data', 'custom_requests.db')
                 if os.path.exists(db_path):
                     conn = sqlite3.connect(db_path)
                     conn.row_factory = sqlite3.Row

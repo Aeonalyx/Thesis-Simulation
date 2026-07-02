@@ -1,5 +1,5 @@
 """
-roc_utils.py
+ROC weighting utilities.
 Utility functions for calculating Rank Order Centroid (ROC) weights from staff rankings.
 """
 
