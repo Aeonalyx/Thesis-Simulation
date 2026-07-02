@@ -22,6 +22,8 @@ try:
         PRIORITY_ROC_WEIGHTS_BASE,
         PRIORITY_ROC_WEIGHTS_FULL,
     )
+    from backend1.criteria_config import load_custom_criteria, score_custom_criteria
+    from backend1.request_fields import load_custom_request_fields
 except ImportError:
     # Works when run directly from backend1/ as a script
     from roc_utils import (
@@ -29,6 +31,8 @@ except ImportError:
         PRIORITY_ROC_WEIGHTS_BASE,
         PRIORITY_ROC_WEIGHTS_FULL,
     )
+    from criteria_config import load_custom_criteria, score_custom_criteria
+    from request_fields import load_custom_request_fields
 
 # ============================================================================
 # DEFAULT CONFIGURATION
@@ -195,6 +199,7 @@ class DocumentRequest:
     requirements_complete_time: Optional[datetime] = None
     payment_time: Optional[datetime] = None
     ready_time: Optional[datetime] = None
+    extra_fields: Dict[str, object] = field(default_factory=dict)
 
     priority_score: float = 0.0
     assignment_time: Optional[datetime] = None
@@ -208,6 +213,7 @@ class DocumentRequest:
         weights: Dict[str, float],
         workday_minutes: int,
         urgency: bool = False,
+        custom_criteria: Optional[List[Dict]] = None,
     ) -> float:
         """Compute weighted priority score for this request at current_time."""
         self.update_status(current_time)
@@ -249,6 +255,7 @@ class DocumentRequest:
             "payment_status": payment_norm,
             "urgency": urgency_norm
         }
+        scores.update(score_custom_criteria(self, custom_criteria or []))
 
         total_score = 0.0
         for key, weight in weights.items():
@@ -288,7 +295,7 @@ class DocumentRequest:
         return (self.completion_time - self.submission_time).total_seconds() / 60.0
 
     def to_dict(self) -> Dict:
-        return {
+        payload = {
             "request_id": self.request_id,
             "college": self.college,
             "document_type": self.document_type,
@@ -312,6 +319,9 @@ class DocumentRequest:
             "assigned_staff": self.assigned_staff,
             "is_custom": self.is_custom,
         }
+        for key, value in (self.extra_fields or {}).items():
+            payload[str(key)] = value
+        return payload
 
 
 @dataclass
@@ -372,9 +382,10 @@ class WeightedPriorityScheduler:
         weights: Dict[str, float],
         workday_minutes: int,
         urgency: bool = False,
+        custom_criteria: Optional[List[Dict]] = None,
     ) -> List[DocumentRequest]:
         for req in self.pending:
-            req.calculate_priority(current_time, weights, workday_minutes, urgency)
+            req.calculate_priority(current_time, weights, workday_minutes, urgency, custom_criteria)
         return sorted(self.pending, key=lambda r: (-r.priority_score, r.submission_time, r.request_id))
 
 
@@ -393,12 +404,14 @@ class SimulationEngine:
         work_start: str = "08:00",
         work_end: str = "17:00",
         urgency: bool = False,
+        custom_criteria: Optional[List[Dict]] = None,
     ):
         self.scheduler_type = (scheduler_type or "FCFS").upper().strip()
         self.allocator_type = (allocator_type or "college_based").strip().lower()
 
         # Record whether urgency is enabled early so normalization can act on it.
         self.urgency = urgency
+        self.custom_criteria = custom_criteria if custom_criteria is not None else load_custom_criteria()
 
         # Select default ROC weight set: by default use the base (6 criteria).
         # If the caller explicitly provided `priority_weights`, respect that.
@@ -684,6 +697,20 @@ class SimulationEngine:
         total_requests = int(config["total_requests"])
         urgency_base = int(config["urgency_base"])
         imbalance_ratio = float(config["imbalance_factor"]) / 100.0
+        request_composition = config.get("request_composition") or {}
+        custom_request_fields = load_custom_request_fields()
+
+        def _configured_weights(options: List[str], key: str, fallback: List[float]) -> List[float]:
+            raw = request_composition.get(key)
+            if not isinstance(raw, dict):
+                return fallback
+            weights = []
+            for option in options:
+                try:
+                    weights.append(max(0.0, float(raw.get(option, 0.0))))
+                except Exception:
+                    weights.append(0.0)
+            return weights if sum(weights) > 0 else fallback
 
         colleges = list(COLLEGE_POPULATION.keys())
         weights = list(COLLEGE_POPULATION.values())
@@ -693,6 +720,7 @@ class SimulationEngine:
             weights[coe_index] += imbalance_ratio * 0.35
             total_weight = sum(weights)
             weights = [w / total_weight for w in weights]
+        weights = _configured_weights(colleges, "college", weights)
 
         requester_types = list(REQUESTER_PRIORITY.keys())
         requester_weights = [
@@ -701,6 +729,7 @@ class SimulationEngine:
         ]
         if sum(requester_weights) <= 0:
             requester_weights = [1.0] * len(requester_types)
+        requester_weights = _configured_weights(requester_types, "requester_type", requester_weights)
         document_types = list(DOCUMENT_COMPLEXITY.keys())
         doc_weights = [1.0] * len(document_types)
 
@@ -712,6 +741,31 @@ class SimulationEngine:
             doc_weights = [
                 float(boost_map.get(doc, 1.0)) for doc in document_types
             ]
+        doc_weights = _configured_weights(document_types, "document_type", doc_weights)
+
+        custom_field_generation: List[Dict[str, object]] = []
+        for custom_field in custom_request_fields:
+            field_key = str(custom_field.get("key", "")).strip()
+            options = [
+                str(option.get("label"))
+                for option in custom_field.get("options", [])
+                if str(option.get("label", "")).strip()
+            ]
+            if not field_key or not options:
+                continue
+            option_scores = {
+                str(option.get("label")): max(0.0, min(float(option.get("score", 0.0) or 0.0), 1.0))
+                for option in custom_field.get("options", [])
+            }
+            option_weights = _configured_weights(options, field_key, [1.0] * len(options))
+            custom_field_generation.append(
+                {
+                    "key": field_key,
+                    "options": options,
+                    "scores": option_scores,
+                    "weights": option_weights,
+                }
+            )
 
         morning_count = int(total_requests * 0.60)
         afternoon_count = int(total_requests * 0.20)
@@ -753,6 +807,18 @@ class SimulationEngine:
                         )[0]
                 else:
                     requester_type = self.rng.choices(requester_types, weights=requester_weights, k=1)[0]
+                extra_fields: Dict[str, object] = {}
+                for field_config in custom_field_generation:
+                    field_key = str(field_config["key"])
+                    field_options = list(field_config["options"])
+                    field_weights = list(field_config["weights"])
+                    selected_value = self.rng.choices(field_options, weights=field_weights, k=1)[0]
+                    field_scores = field_config.get("scores", {})
+                    score_value = 0.0
+                    if isinstance(field_scores, dict):
+                        score_value = max(0.0, min(float(field_scores.get(selected_value, 0.0) or 0.0), 1.0))
+                    extra_fields[field_key] = selected_value
+                    extra_fields[f"{field_key}_score"] = score_value
                 partial_delay_hours = self.rng.uniform(*REQUIREMENTS_PARTIAL_DELAY_HOURS_RANGE)
                 complete_extra_hours = self.rng.uniform(*REQUIREMENTS_COMPLETE_EXTRA_DELAY_HOURS_RANGE)
                 requirements_partial_time = submission_time + timedelta(hours=partial_delay_hours)
@@ -782,6 +848,7 @@ class SimulationEngine:
                     payment_time=payment_time,
                     ready_time=ready_time,
                     payment_status=payment_status,
+                    extra_fields=extra_fields,
                 )
                 request.update_status(submission_time)
                 requests.append(request)
@@ -1342,6 +1409,7 @@ class SimulationEngine:
                 weights=self.priority_weights,
                 workday_minutes=self.workday_minutes,
                 urgency=self.urgency,
+                custom_criteria=self.custom_criteria,
             )
 
             top_preview = [
@@ -1351,7 +1419,14 @@ class SimulationEngine:
                 current_time,
                 "PRIORITY",
                 details="top_pending=" + ", ".join(top_preview),
-                extra={"pending_count": len(ranked)},
+                extra={
+                    "pending_count": len(ranked),
+                    "ranked_request_ids": [item.request_id for item in ranked],
+                    "ranked_scores": {
+                        item.request_id: round(float(item.priority_score), 4)
+                        for item in ranked
+                    },
+                },
             )
 
             selected_tuple: Optional[Tuple[DocumentRequest, StaffMember, datetime, str]] = None
@@ -1511,6 +1586,7 @@ class SimulationEngine:
         
         # Check payload first
         payload_custom = config.get("custom_requests")
+        uploaded_dataset_mode = bool(config.get("uploaded_request_dataset_mode", False))
         if isinstance(payload_custom, list):
             custom_rows = payload_custom
         else:
@@ -1585,6 +1661,15 @@ class SimulationEngine:
                     doc_type = row.get('document_type')
                     urgency = int(row.get('urgency', 5))
                     req_type = row.get('requester_type')
+                    extra_fields: Dict[str, object] = {}
+                    for custom_field in load_custom_request_fields():
+                        field_key = str(custom_field.get("key", "")).strip()
+                        if not field_key or field_key not in row:
+                            continue
+                        extra_fields[field_key] = row.get(field_key)
+                        score_key = f"{field_key}_score"
+                        if score_key in row:
+                            extra_fields[score_key] = row.get(score_key)
 
                     sub_time = align_to_sim_date(row.get('submission_time'), align_custom_dates) or self.start_time
                     req_partial = align_to_sim_date(row.get('requirements_partial_time'), align_custom_dates)
@@ -1629,7 +1714,8 @@ class SimulationEngine:
                         requirements_complete_time=req_complete,
                         payment_time=pay_time,
                         ready_time=rdy_time,
-                        is_custom=True
+                        extra_fields=extra_fields,
+                        is_custom=bool(row.get("is_custom", not uploaded_dataset_mode))
                     )
                     doc_req.update_status(sub_time)
                     custom_requests.append(doc_req)
@@ -1656,6 +1742,7 @@ class SimulationEngine:
                 "seed_used": self.random_seed,
                 "run_config": config,
                 "priority_weights": self.priority_weights,
+                "custom_criteria": self.custom_criteria,
                 "work_hours": {
                     "start": self._clock_string(self.work_start_minutes),
                     "end": self._clock_string(self.work_end_minutes),

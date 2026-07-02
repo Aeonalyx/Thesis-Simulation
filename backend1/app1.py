@@ -9,10 +9,44 @@ try:
     # Works when run from workspace root as a package
     from backend1.scheduler_engine1 import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
     from backend1.roc_utils import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
+    from backend1.criteria_config import (
+        SCORING_TYPE_LABELS,
+        SOURCE_FIELD_LABELS,
+        get_source_field_labels,
+        get_source_field_options,
+        get_criteria_catalog,
+        load_custom_criteria,
+        save_custom_criteria,
+        slugify_key,
+    )
+    from backend1.request_fields import (
+        RESERVED_FIELD_KEYS,
+        load_custom_request_fields,
+        normalize_field,
+        save_custom_request_fields,
+        slugify_key as slugify_field_key,
+    )
 except ImportError:
     # Works when run directly from backend1/ as a script
     from scheduler_engine1 import SimulationEngine, COLLEGES, DOCUMENT_COMPLEXITY, COLLEGE_POPULATION
     from roc_utils import PRIORITY_ROC_WEIGHTS_BASE, PRIORITY_ROC_WEIGHTS_FULL
+    from criteria_config import (
+        SCORING_TYPE_LABELS,
+        SOURCE_FIELD_LABELS,
+        get_source_field_labels,
+        get_source_field_options,
+        get_criteria_catalog,
+        load_custom_criteria,
+        save_custom_criteria,
+        slugify_key,
+    )
+    from request_fields import (
+        RESERVED_FIELD_KEYS,
+        load_custom_request_fields,
+        normalize_field,
+        save_custom_request_fields,
+        slugify_key as slugify_field_key,
+    )
 
 
 app = Flask(__name__)
@@ -95,7 +129,19 @@ def get_config():
         "scheduler_types": ["FCFS", "WEIGHTED"],
         "scenarios": ["baseline", "staff_absence", "peak_urgency", "workload_imbalance","peak_period"],
         "priority_weights_base": PRIORITY_ROC_WEIGHTS_BASE,
-        "priority_weights_full": PRIORITY_ROC_WEIGHTS_FULL
+        "priority_weights_full": PRIORITY_ROC_WEIGHTS_FULL,
+        "priority_criteria_catalog": get_criteria_catalog(),
+        "custom_criteria": load_custom_criteria(),
+        "custom_request_fields": load_custom_request_fields(),
+        "criteria_source_fields": get_source_field_labels(),
+        "criteria_scoring_types": SCORING_TYPE_LABELS,
+        "criteria_source_options": {
+            "requester_type": ["Graduating Student", "Faculty", "Alumni", "Regular Student"],
+            "document_type": list(DOCUMENT_COMPLEXITY.keys()),
+            "college": COLLEGES,
+            "urgency": list(range(1, 11)),
+            **get_source_field_options(include_built_ins=False),
+        }
     })
 
 
@@ -119,12 +165,10 @@ def run_simulation():
         "work_start": "08:00",
         "work_end": "17:00",
         "priority_weights": {
-            "completeness_of_requirements": 0.30,
-            "submission_time": 0.22,
-            "document_type": 0.18,
-            "requester_status": 0.14,
-            "college_affiliation": 0.10,
-            "payment_status": 0.06
+            "submission_time": 0.52,
+            "document_type": 0.27,
+            "requester_status": 0.15,
+            "college_affiliation": 0.06
         }
     }
     
@@ -149,6 +193,7 @@ def run_simulation():
         priority_weights = data.get('priority_weights')
         urgency = data.get('urgency', False)
         disable_generated_requests = data.get('disable_generated_requests', False)
+        request_composition = data.get('request_composition')
         
         # Validate inputs
         if scheduler_type not in ['FCFS', 'WEIGHTED']:
@@ -182,6 +227,7 @@ def run_simulation():
             "imbalance_factor": imbalance_factor,
             "num_absent_staff": num_absent_staff,
             "disable_generated_requests": disable_generated_requests,
+            "request_composition": request_composition,
             "sim_start_date": data.get("sim_start_date"),
             "align_custom_dates": data.get("align_custom_dates", False),
             "custom_requests": data.get("custom_requests"),
@@ -232,6 +278,7 @@ def run_quick_simulation():
         data = request.get_json() or {}
         random_seed = data.get('random_seed')
         total_requests = data.get('total_requests', data.get('num_requests', 200))
+        request_composition = data.get('request_composition')
         
         engine = SimulationEngine(
             scheduler_type='FCFS',
@@ -243,6 +290,7 @@ def run_quick_simulation():
         results = engine.run(custom_config={
             "scenario": 'baseline',
             "total_requests": total_requests,
+            "request_composition": request_composition,
         })
 
         staff_info = get_staff_info(engine)
@@ -288,6 +336,7 @@ def compare_allocators():
         priority_weights = data.get('priority_weights')
         urgency = data.get('urgency', False)
         disable_generated_requests = data.get('disable_generated_requests', False)
+        request_composition = data.get('request_composition')
         
         allocators = ['college_based', 'workload_based', 'pooled', 'quota_free']
         results = {}
@@ -311,6 +360,7 @@ def compare_allocators():
                 "imbalance_factor": imbalance_factor,
                 "num_absent_staff": num_absent_staff,
                 "disable_generated_requests": disable_generated_requests,
+                "request_composition": request_composition,
                 "sim_start_date": data.get("sim_start_date"),
                 "align_custom_dates": data.get("align_custom_dates", False),
                 "custom_requests": data.get("custom_requests"),
@@ -346,12 +396,179 @@ def api_info():
             "POST /simulate": "Run simulation with custom parameters",
             "POST /simulate/quick": "Run baseline simulation",
             "POST /simulate/compare": "Compare allocator strategies",
+            "GET /api/criteria": "List built-in and custom priority criteria",
+            "POST /api/criteria": "Add a custom priority criterion",
+            "DELETE /api/criteria/<criterion_key>": "Delete a custom priority criterion",
+            "GET /api/request-fields": "List institution-defined request fields",
+            "POST /api/request-fields": "Add an institution-defined request field",
+            "DELETE /api/request-fields/<field_key>": "Delete an institution-defined request field",
             "GET /api/custom-requests": "List all custom requests in database",
             "POST /api/custom-requests": "Add a custom request to database",
             "DELETE /api/custom-requests": "Clear all custom requests in database",
             "DELETE /api/custom-requests/<request_id>": "Delete a specific custom request by request_id"
         }
     })
+
+
+@app.route('/api/criteria', methods=['GET'])
+def get_criteria_endpoint():
+    """List built-in and custom priority criteria."""
+    try:
+        return jsonify({
+            "criteria": get_criteria_catalog(),
+            "custom_criteria": load_custom_criteria(),
+            "custom_request_fields": load_custom_request_fields(),
+            "source_fields": get_source_field_labels(),
+            "scoring_types": SCORING_TYPE_LABELS,
+            "source_options": {
+                "requester_type": ["Graduating Student", "Faculty", "Alumni", "Regular Student"],
+                "document_type": list(DOCUMENT_COMPLEXITY.keys()),
+                "college": COLLEGES,
+                "urgency": list(range(1, 11)),
+                **get_source_field_options(include_built_ins=False),
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def validate_criterion_payload(data):
+    label = str(data.get("label", "")).strip()
+    if not label:
+        return None, "Criterion name is required"
+
+    key = slugify_key(data.get("key") or label)
+    built_in_keys = {item["key"] for item in get_criteria_catalog() if item.get("source") == "built_in"}
+    existing_custom_keys = {item.get("key") for item in load_custom_criteria()}
+    if key in built_in_keys or key in existing_custom_keys:
+        return None, f"Criterion key already exists: {key}"
+
+    source_field = data.get("source_field")
+    custom_field_keys = {field.get("key") for field in load_custom_request_fields()}
+    if source_field not in custom_field_keys:
+        return None, f"Unsupported source_field: {source_field}"
+    if any(item.get("source_field") == source_field for item in load_custom_criteria()):
+        return None, f"That request field is already linked to a criterion: {source_field}"
+
+    criterion = {
+        "key": key,
+        "label": label,
+        "source": "custom",
+        "source_field": source_field,
+        "scoring_type": "field_score",
+        "default_score": 0.0,
+    }
+
+    return criterion, None
+
+
+@app.route('/api/criteria', methods=['POST'])
+def add_criterion_endpoint():
+    """Add a custom priority criterion."""
+    try:
+        data = request.get_json() or {}
+        criterion, error = validate_criterion_payload(data)
+        if error:
+            return jsonify({"error": error}), 400
+
+        custom_criteria = load_custom_criteria()
+        custom_criteria.append(criterion)
+        save_custom_criteria(custom_criteria)
+        return jsonify({"success": True, "criterion": criterion}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/criteria/<criterion_key>', methods=['DELETE'])
+def delete_criterion_endpoint(criterion_key):
+    """Delete a custom priority criterion."""
+    try:
+        custom_criteria = load_custom_criteria()
+        remaining = [item for item in custom_criteria if item.get("key") != criterion_key]
+        if len(remaining) == len(custom_criteria):
+            return jsonify({"error": f"Custom criterion not found: {criterion_key}"}), 404
+        save_custom_criteria(remaining)
+        return jsonify({"success": True, "message": f"Deleted {criterion_key}"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/request-fields', methods=['GET'])
+def get_request_fields_endpoint():
+    """List institution-defined request fields."""
+    try:
+        return jsonify({"fields": load_custom_request_fields()}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def validate_request_field_payload(data):
+    label = str(data.get("label", "")).strip()
+    if not label:
+        return None, "Field name is required"
+
+    raw_key = data.get("key") or label
+    key = slugify_field_key(raw_key)
+    if key in RESERVED_FIELD_KEYS:
+        return None, f"Field key is reserved: {key}"
+
+    existing_keys = {field.get("key") for field in load_custom_request_fields()}
+    if key in existing_keys:
+        return None, f"Field key already exists: {key}"
+
+    raw_options = data.get("options")
+    if not isinstance(raw_options, list) or not raw_options:
+        return None, "At least one category option is required"
+
+    field = normalize_field({
+        "key": key,
+        "label": label,
+        "type": "category",
+        "options": raw_options,
+    })
+    if not field:
+        return None, "Invalid request field configuration"
+    return field, None
+
+
+@app.route('/api/request-fields', methods=['POST'])
+def add_request_field_endpoint():
+    """Add an institution-defined request field."""
+    try:
+        data = request.get_json() or {}
+        field, error = validate_request_field_payload(data)
+        if error:
+            return jsonify({"error": error}), 400
+
+        fields = load_custom_request_fields()
+        fields.append(field)
+        save_custom_request_fields(fields)
+        return jsonify({"success": True, "field": field}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/request-fields/<field_key>', methods=['DELETE'])
+def delete_request_field_endpoint(field_key):
+    """Delete an institution-defined request field and any criterion using it."""
+    try:
+        fields = load_custom_request_fields()
+        remaining_fields = [field for field in fields if field.get("key") != field_key]
+        if len(remaining_fields) == len(fields):
+            return jsonify({"error": f"Request field not found: {field_key}"}), 404
+        save_custom_request_fields(remaining_fields)
+
+        custom_criteria = load_custom_criteria()
+        remaining_criteria = [
+            item for item in custom_criteria
+            if item.get("source_field") != field_key
+        ]
+        if len(remaining_criteria) != len(custom_criteria):
+            save_custom_criteria(remaining_criteria)
+
+        return jsonify({"success": True, "message": f"Deleted {field_key}"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/custom-requests', methods=['GET'])

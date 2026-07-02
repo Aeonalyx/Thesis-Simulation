@@ -13,6 +13,7 @@ import math
 import os
 import sys
 import time as tm
+from io import BytesIO
 from datetime import datetime, time
 from typing import Any, Dict, List, Optional
 
@@ -34,10 +35,13 @@ from backend1.scheduler_engine1 import (  # noqa: E402
     PRIORITY_ROC_WEIGHTS_FULL,
     COLLEGE_PRIORITY,
     REQUESTER_PRIORITY,
+    REQUESTER_GENERATION_WEIGHTS,
     REQUESTER_PRIORITY_MAX,
     DocumentRequest,
     _duration_to_schedule,
 )
+from backend1.roc_utils import calculate_roc_weights  # noqa: E402
+from backend1.criteria_config import score_custom_criteria  # noqa: E402
 
 # ============================================================================
 # BACKEND API CONFIGURATION
@@ -53,7 +57,25 @@ DEFAULT_CONFIG = {
     "scheduler_types": ["FCFS", "WEIGHTED"],
     "scenarios": ["baseline", "staff_absence", "peak_urgency", "workload_imbalance", "peak_period"],
     "priority_weights_base": PRIORITY_WEIGHTS,
-    "priority_weights_full": PRIORITY_ROC_WEIGHTS_FULL
+    "priority_weights_full": PRIORITY_ROC_WEIGHTS_FULL,
+    "priority_criteria_catalog": [
+        {"key": key, "label": key.replace("_", " ").title(), "source": "built_in"}
+        for key in list(PRIORITY_WEIGHTS.keys())
+    ] + [{"key": "urgency", "label": "Urgency", "source": "built_in", "optional": True}],
+    "custom_criteria": [],
+    "custom_request_fields": [],
+    "criteria_source_fields": {
+        "requester_type": "Requester type",
+        "document_type": "Document type",
+        "college": "College",
+        "urgency": "Urgency",
+    },
+    "criteria_scoring_types": {
+        "category_mapping": "Category mapping",
+        "duration_mapping": "Duration mapping",
+        "numeric_scale": "Numeric scale",
+    },
+    "criteria_source_options": {},
 }
 
 @st.cache_data(ttl=60)
@@ -69,11 +91,24 @@ def fetch_backend_config():
 backend_config = fetch_backend_config()
 COLLEGES = backend_config.get("colleges", DEFAULT_CONFIG["colleges"])
 DOCUMENT_COMPLEXITY = backend_config.get("document_complexity", DEFAULT_CONFIG["document_complexity"])
+COLLEGE_POPULATION_CONFIG = backend_config.get("college_population", DEFAULT_CONFIG["college_population"])
 ALLOCATOR_OPTIONS = backend_config.get("allocator_types", DEFAULT_CONFIG["allocator_types"])
 SCHEDULER_OPTIONS = backend_config.get("scheduler_types", DEFAULT_CONFIG["scheduler_types"])
+CRITERIA_CATALOG = backend_config.get("priority_criteria_catalog", DEFAULT_CONFIG["priority_criteria_catalog"])
+CUSTOM_CRITERIA = backend_config.get("custom_criteria", [])
+CUSTOM_REQUEST_FIELDS = backend_config.get("custom_request_fields", [])
+CRITERIA_SOURCE_FIELDS = backend_config.get("criteria_source_fields", DEFAULT_CONFIG["criteria_source_fields"])
+CRITERIA_SCORING_TYPES = backend_config.get("criteria_scoring_types", DEFAULT_CONFIG["criteria_scoring_types"])
+CRITERIA_SOURCE_OPTIONS = backend_config.get("criteria_source_options", DEFAULT_CONFIG["criteria_source_options"])
 
 
-CRITERIA_KEYS = list(PRIORITY_WEIGHTS.keys())
+CRITERIA_KEYS = [
+    item.get("key")
+    for item in CRITERIA_CATALOG
+    if item.get("key") and item.get("key") != "urgency" and not item.get("optional")
+]
+CRITERIA_ORDER_SIGNATURE = "|".join(CRITERIA_KEYS)
+GATE_CRITERIA_KEYS = ["completeness_of_requirements", "payment_status"]
 CRITERIA_LABELS = {
     "completeness_of_requirements": "Completeness of requirements",
     "submission_time": "Submission time",
@@ -83,6 +118,21 @@ CRITERIA_LABELS = {
     "payment_status": "Payment status",
     "urgency": "Urgency",
 }
+CRITERIA_LABELS.update({
+    item.get("key"): item.get("label", str(item.get("key")).replace("_", " ").title())
+    for item in CRITERIA_CATALOG
+    if item.get("key")
+})
+WEIGHT_MODE_OPTIONS = {
+    "roc": "ROC ranking",
+    "manual": "Manual weights",
+}
+
+PEAK_DOCUMENT_BOOST_WEIGHTS = {
+    "Official Transcript of Records (TOR) and Transfer Credentials (TC)": 3.0,
+    "Certification": 2.0,
+}
+
 
 
 def format_criterion_label(key: str) -> str:
@@ -92,18 +142,322 @@ def format_criterion_label(key: str) -> str:
 def weight_state_key(key: str) -> str:
     return f"w_{key}"
 
+
+def composition_state_key(group: str, option: Any) -> str:
+    return f"composition_{group}_{str(option).replace(' ', '_').replace('/', '_')}"
+
+
+def custom_request_field_map() -> Dict[str, Dict[str, Any]]:
+    return {
+        str(field.get("key")): field
+        for field in CUSTOM_REQUEST_FIELDS
+        if field.get("key")
+    }
+
+
+def custom_request_field_options(field_key: str) -> List[str]:
+    field = custom_request_field_map().get(field_key, {})
+    options = []
+    for option in field.get("options", []) or []:
+        label = str(option.get("label", "")).strip()
+        if label:
+            options.append(label)
+    return options
+
+
+def composition_group_keys() -> List[str]:
+    return ["college", "requester_type", "document_type"] + list(custom_request_field_map().keys())
+
+
+def _normalized_document_mix_defaults() -> Dict[str, float]:
+    """Default document mix based on the same normalized complexity idea used by priority scoring."""
+    raw_values: Dict[str, float] = {}
+    for doc_type, duration_value in DOCUMENT_COMPLEXITY.items():
+        base_duration, _ = _duration_to_schedule(duration_value)
+        complexity_days = max(base_duration.total_seconds() / 86400.0, 1e-6)
+        raw_values[str(doc_type)] = 1.0 / (1.0 + complexity_days)
+    total = sum(raw_values.values())
+    if total <= 0:
+        return {str(key): 1.0 for key in DOCUMENT_COMPLEXITY.keys()}
+    return {key: value / total for key, value in raw_values.items()}
+
+
+def _college_population_defaults() -> Dict[str, float]:
+    return {str(key): float(COLLEGE_POPULATION_CONFIG.get(key, 0.0)) for key in COLLEGES}
+
+
+def _document_equal_defaults() -> Dict[str, float]:
+    return {str(key): 1.0 for key in DOCUMENT_COMPLEXITY.keys()}
+
+
+def _document_defaults_for_current_mode() -> Dict[str, float]:
+    base_values = _document_equal_defaults()
+    if not st.session_state.get("peak_mode", False):
+        return base_values
+    return {
+        option: float(PEAK_DOCUMENT_BOOST_WEIGHTS.get(option, 1.0))
+        for option in base_values.keys()
+    }
+
+
+def default_composition_values(group: str) -> Dict[str, float]:
+    if group == "college":
+        # College demand is controlled only by the College Mix composition.
+        # The default follows actual college population weights.
+        return _college_population_defaults()
+    if group == "requester_type":
+        return {
+            str(key): float(REQUESTER_GENERATION_WEIGHTS.get(key, 0.0))
+            for key in REQUESTER_PRIORITY.keys()
+        }
+    if group == "document_type":
+        # Normal mode matches backend generation default: equal likelihood.
+        # Peak Period uses the backend peak-period boost design: TOR/TC = 3,
+        # Certification = 2, all other document types = 1.
+        return _document_defaults_for_current_mode()
+    if group in custom_request_field_map():
+        options = custom_request_field_options(group)
+        return {str(option): 1.0 for option in options}
+    return {}
+
+def _normalize_composition_values(values: Dict[str, float]) -> Dict[str, float]:
+    cleaned = {str(key): max(0.0, float(value)) for key, value in values.items()}
+    total = sum(cleaned.values())
+    if total <= 0:
+        return cleaned
+    return {key: value / total for key, value in cleaned.items()}
+
+
+def composition_lock_state_key(group: str) -> str:
+    return f"composition_locked_targets_{group}"
+
+
+def get_composition_locked_targets(group: str) -> Dict[str, float]:
+    raw_locks = st.session_state.get(composition_lock_state_key(group), {})
+    if not isinstance(raw_locks, dict):
+        return {}
+    defaults = default_composition_values(group)
+    locks: Dict[str, float] = {}
+    for option, value in raw_locks.items():
+        if option not in defaults:
+            continue
+        try:
+            locks[str(option)] = max(0.0, min(float(value), 1.0))
+        except Exception:
+            continue
+    return locks
+
+
+def _basis_for_unlocked_options(
+    group: str,
+    defaults: Dict[str, float],
+    unlocked_options: List[str],
+) -> Dict[str, float]:
+    current_values = {
+        option: max(0.0, float(st.session_state.get(composition_state_key(group, option), defaults.get(option, 0.0))))
+        for option in unlocked_options
+    }
+    current_total = sum(current_values.values())
+    if current_total > 0:
+        return current_values
+
+    default_values = {
+        option: max(0.0, float(defaults.get(option, 0.0)))
+        for option in unlocked_options
+    }
+    default_total = sum(default_values.values())
+    if default_total > 0:
+        return default_values
+
+    return {option: 1.0 for option in unlocked_options}
+
+
+def apply_locked_composition_targets(group: str):
+    """Apply all locked target shares and distribute the remainder across unlocked options."""
+    defaults = default_composition_values(group)
+    if not defaults:
+        return
+
+    locked_targets = get_composition_locked_targets(group)
+    locked_total = sum(locked_targets.values())
+
+    # Safety fallback for old/bad state: scale locked targets if they somehow exceed 100%.
+    if locked_total > 1.0:
+        locked_targets = {option: value / locked_total for option, value in locked_targets.items()}
+        st.session_state[composition_lock_state_key(group)] = locked_targets
+        locked_total = 1.0
+
+    unlocked_options = [option for option in defaults.keys() if option not in locked_targets]
+    remaining_share = max(0.0, 1.0 - locked_total)
+
+    for option, value in locked_targets.items():
+        st.session_state[composition_state_key(group, option)] = float(value)
+
+    if not unlocked_options:
+        return
+
+    basis = _basis_for_unlocked_options(group, defaults, unlocked_options)
+    basis_total = sum(max(0.0, float(value)) for value in basis.values())
+    if basis_total <= 0:
+        equal_share = remaining_share / max(len(unlocked_options), 1)
+        for option in unlocked_options:
+            st.session_state[composition_state_key(group, option)] = equal_share
+        return
+
+    for option in unlocked_options:
+        st.session_state[composition_state_key(group, option)] = (
+            remaining_share * max(0.0, float(basis.get(option, 0.0))) / basis_total
+        )
+
+
+def set_composition_share(group: str, selected_option: str, target_share: float):
+    """Lock one option to an exact share while preserving other previously locked options."""
+    defaults = default_composition_values(group)
+    if selected_option not in defaults:
+        return
+
+    target_share = max(0.0, min(float(target_share), 1.0))
+    locked_targets = get_composition_locked_targets(group)
+
+    other_locked_total = sum(
+        value for option, value in locked_targets.items()
+        if option != selected_option
+    )
+    if other_locked_total + target_share > 1.0:
+        target_share = max(0.0, 1.0 - other_locked_total)
+
+    locked_targets[selected_option] = target_share
+    st.session_state[composition_lock_state_key(group)] = locked_targets
+    apply_locked_composition_targets(group)
+
+
+def reset_composition_group(group: str):
+    st.session_state[composition_lock_state_key(group)] = {}
+    for option, value in default_composition_values(group).items():
+        st.session_state[composition_state_key(group, option)] = float(value)
+
+
+def composition_from_ui(group: str) -> Dict[str, float]:
+    defaults = default_composition_values(group)
+    return {
+        key: max(0.0, float(st.session_state.get(composition_state_key(group, key), value)))
+        for key, value in defaults.items()
+    }
+
+
+def request_composition_from_ui() -> Dict[str, Dict[str, float]]:
+    return {
+        group: composition_from_ui(group)
+        for group in composition_group_keys()
+    }
+
+
 def active_criteria() -> List[str]:
     """Return the list of criteria to render in the UI based on urgency toggle."""
-    keys = list(CRITERIA_KEYS)
+    keys = [key for key in CRITERIA_KEYS if key != "urgency"]
     if st.session_state.get("urgency", False) and "urgency" not in keys:
         keys = keys + ["urgency"]
     return keys
+
+
+def _sanitize_selected_weight_criteria(selected: Any, available: List[str]) -> List[str]:
+    if not isinstance(selected, list):
+        selected = available
+    selected = [key for key in selected if key in available]
+    return selected or available[:]
+
+
+def sync_selected_weight_criteria():
+    available = active_criteria()
+    selected = _sanitize_selected_weight_criteria(
+        st.session_state.get("selected_weight_criteria", available),
+        available,
+    )
+    st.session_state.selected_weight_criteria = selected
+
+
+def get_selected_weight_criteria() -> List[str]:
+    available = active_criteria()
+    return _sanitize_selected_weight_criteria(
+        st.session_state.get("selected_weight_criteria", available),
+        available,
+    )
+
+
+def get_criteria_order() -> List[str]:
+    selected = get_selected_weight_criteria()
+    saved = st.session_state.get("criteria_order", selected)
+    if not isinstance(saved, list):
+        saved = selected
+    ordered = [key for key in saved if key in selected]
+    ordered.extend([key for key in selected if key not in ordered])
+    st.session_state.criteria_order = ordered
+    return ordered
+
+
+def get_ordered_selected_criteria() -> List[str]:
+    order = get_criteria_order()
+    selected = get_selected_weight_criteria()
+    ordered = [key for key in order if key in selected]
+    ordered.extend([key for key in selected if key not in ordered])
+    return ordered
+
+
+def set_criteria_order(order: List[str]):
+    selected = get_selected_weight_criteria()
+    st.session_state.criteria_order = [key for key in order if key in selected]
+
+
+def reconcile_manual_weight_state():
+    for key in active_criteria():
+        state_key = weight_state_key(key)
+        raw_value = st.session_state.get(state_key, 0.0)
+        try:
+            value = float(raw_value)
+        except Exception:
+            value = 0.0
+        if value > 1.0:
+            value = value / 100.0
+        st.session_state[state_key] = max(0.0, min(value, 1.0))
+
+
+def manual_weights_from_ui() -> Dict[str, float]:
+    selected = get_ordered_selected_criteria()
+    return {
+        key: max(0.0, min(float(st.session_state.get(weight_state_key(key), 0.0)), 1.0))
+        for key in selected
+    }
+
+
+def manual_weight_total() -> float:
+    return sum(manual_weights_from_ui().values())
+
+
+def manual_weights_complete(tolerance: float = 0.001) -> bool:
+    return abs(manual_weight_total() - 1.0) <= tolerance
+
+
+def roc_weights_from_ui() -> Dict[str, float]:
+    return calculate_roc_weights(get_criteria_order())
 
 # ============================================================================
 # DATA WRAPPERS (To parse API JSON back into frontend-compatible objects)
 # ============================================================================
 class RequestRecord(DocumentRequest):
     def __init__(self, data: dict):
+        standard_keys = {
+            "request_id", "college", "document_type", "urgency", "requester_type",
+            "submission_time", "completeness_of_requirements", "payment_status",
+            "requirements_stage", "requirements_partial_time",
+            "requirements_complete_time", "payment_time", "ready_time",
+            "priority_score", "assignment_time", "completion_time",
+            "assigned_staff", "is_custom",
+        }
+        extra_fields = {
+            key: value
+            for key, value in data.items()
+            if key not in standard_keys
+        }
         super().__init__(
             request_id=str(data.get("request_id", "")),
             college=str(data.get("college", "")),
@@ -123,6 +477,7 @@ class RequestRecord(DocumentRequest):
             completion_time=self._parse_time(data.get("completion_time")),
             assigned_staff=str(data.get("assigned_staff")) if data.get("assigned_staff") else None,
             is_custom=bool(data.get("is_custom", False)),
+            extra_fields=extra_fields,
         )
 
     @staticmethod
@@ -512,7 +867,7 @@ SPEED_OPTIONS = {
 }
 
 WEIGHT_DEFAULT_STATE = {
-    weight_state_key(key): int(PRIORITY_WEIGHTS.get(key, 0.0) * 100)
+    weight_state_key(key): 0.0
     for key in CRITERIA_KEYS
 }
 
@@ -523,7 +878,7 @@ DEFAULT_STATE = {
     "quota_limit": 20,
     "enable_absence": False,
     "total_requests": 100,
-    "imbalance_factor": 0,
+    "disable_generated_requests": False,
     "num_absent_staff": 0,
     "peak_mode": False,
     "work_start_time": time(8, 0),
@@ -536,13 +891,39 @@ DEFAULT_STATE = {
     "playback_speed": "1.00x",
     "playback_playing": False,
     "urgency": False,
+    "weight_mode": "roc",
+    "selected_weight_criteria": CRITERIA_KEYS[:],
+    "criteria_order": CRITERIA_KEYS[:],
+    "uploaded_request_dataset": None,
+    "uploaded_request_dataset_name": None,
 }
 
 
 def initialize_state():
+    # College imbalance is now handled directly through College Mix composition.
+    # Remove the old session key so it cannot silently influence defaults.
+    st.session_state.pop("imbalance_factor", None)
     for key, value in DEFAULT_STATE.items():
         if key not in st.session_state:
             st.session_state[key] = value
+    for group in composition_group_keys():
+        for option, value in default_composition_values(group).items():
+            state_key = composition_state_key(group, option)
+            if state_key not in st.session_state:
+                st.session_state[state_key] = float(value)
+    if st.session_state.get("criteria_order_signature") != CRITERIA_ORDER_SIGNATURE:
+        previous_selected = st.session_state.get("selected_weight_criteria", CRITERIA_KEYS[:])
+        if not isinstance(previous_selected, list):
+            previous_selected = CRITERIA_KEYS[:]
+        selected_set = set(previous_selected)
+        ordered_selected = [key for key in CRITERIA_KEYS if key in selected_set]
+        ordered_selected.extend([
+            key for key in previous_selected
+            if key not in ordered_selected and key in active_criteria()
+        ])
+        st.session_state.selected_weight_criteria = ordered_selected or CRITERIA_KEYS[:]
+        st.session_state.criteria_order = st.session_state.selected_weight_criteria[:]
+        st.session_state.criteria_order_signature = CRITERIA_ORDER_SIGNATURE
 
     if "simulation_engine" not in st.session_state:
         st.session_state.simulation_engine = None
@@ -578,16 +959,19 @@ def collect_ui_config() -> Dict:
         "quota_limit": int(st.session_state.quota_limit),
         "enable_absence": bool(st.session_state.enable_absence),
         "total_requests": int(st.session_state.total_requests),
-        "peak_mode": bool(st.session_state.peak_mode),
+        "peak_mode": bool(st.session_state.get("peak_mode", DEFAULT_STATE["peak_mode"])),
         "urgency": bool(st.session_state.urgency),
-        "imbalance_factor": int(st.session_state.imbalance_factor),
         "num_absent_staff": int(st.session_state.num_absent_staff),
         "work_start": st.session_state.work_start_time.strftime("%H:%M"),
         "work_end": st.session_state.work_end_time.strftime("%H:%M"),
-        "seed_mode": st.session_state.seed_mode,
-        "manual_seed": int(st.session_state.manual_seed),
+        "request_composition": request_composition_from_ui(),
+        "uploaded_request_dataset_name": st.session_state.get("uploaded_request_dataset_name"),
+        "weight_mode": st.session_state.get("weight_mode", "roc"),
+        "selected_weight_criteria": get_selected_weight_criteria(),
+        "criteria_order": get_criteria_order(),
         "weights_raw": {
-            key: int(st.session_state.get(weight_state_key(key), 0)) for key in active_criteria()
+            key: float(st.session_state.get(weight_state_key(key), 0.0))
+            for key in active_criteria()
         },
     }
 
@@ -615,10 +999,22 @@ def apply_ui_config(config: Dict):
     st.session_state.enable_absence = bool(enable_absence)
 
     st.session_state.total_requests = int(config.get("total_requests", st.session_state.total_requests))
-    st.session_state.peak_mode = bool(config.get("peak_mode", st.session_state.peak_mode))
+    st.session_state.peak_mode = bool(config.get("peak_mode", st.session_state.get("peak_mode", DEFAULT_STATE["peak_mode"])))
     st.session_state.urgency = bool(config.get("urgency", st.session_state.urgency))
-    st.session_state.imbalance_factor = int(config.get("imbalance_factor", st.session_state.imbalance_factor))
-
+    st.session_state.weight_mode = config.get("weight_mode", st.session_state.get("weight_mode", "roc"))
+    if st.session_state.weight_mode not in WEIGHT_MODE_OPTIONS:
+        st.session_state.weight_mode = "roc"
+    available = active_criteria()
+    selected = config.get("selected_weight_criteria", st.session_state.get("selected_weight_criteria", available))
+    if not isinstance(selected, list):
+        selected = available
+    st.session_state.selected_weight_criteria = [key for key in selected if key in available] or available[:]
+    order = config.get("criteria_order", st.session_state.get("criteria_order", st.session_state.selected_weight_criteria))
+    if not isinstance(order, list):
+        order = st.session_state.selected_weight_criteria
+    st.session_state.criteria_order = [
+        key for key in order if key in st.session_state.selected_weight_criteria
+    ]
     max_absent = max(0, st.session_state.num_staff - 1)
     if st.session_state.enable_absence and max_absent > 0:
         st.session_state.num_absent_staff = min(
@@ -638,21 +1034,44 @@ def apply_ui_config(config: Dict):
 
     st.session_state.seed_mode = config.get("seed_mode", st.session_state.seed_mode)
     st.session_state.manual_seed = int(config.get("manual_seed", st.session_state.manual_seed))
+    composition = config.get("request_composition", {})
+    if isinstance(composition, dict):
+        for group in composition_group_keys():
+            group_values = composition.get(group, {})
+            if not isinstance(group_values, dict):
+                continue
+            for option, default_value in default_composition_values(group).items():
+                value = group_values.get(option, default_value)
+                try:
+                    value = float(value)
+                except Exception:
+                    value = float(default_value)
+                st.session_state[composition_state_key(group, option)] = max(0.0, value)
 
     raw = config.get("weights_raw", {})
     for key in CRITERIA_KEYS:
         state_key = weight_state_key(key)
-        st.session_state[state_key] = int(raw.get(key, st.session_state.get(state_key, 50)))
+        value = raw.get(key, st.session_state.get(state_key, 0.0))
+        try:
+            value = float(value)
+        except Exception:
+            value = 0.0
+        st.session_state[state_key] = value / 100.0 if value > 1.0 else value
     if "urgency" in raw:
-        st.session_state[weight_state_key("urgency")] = int(raw.get("urgency", st.session_state.get(weight_state_key("urgency"), 50)))
+        value = raw.get("urgency", st.session_state.get(weight_state_key("urgency"), 0.0))
+        try:
+            value = float(value)
+        except Exception:
+            value = 0.0
+        st.session_state[weight_state_key("urgency")] = value / 100.0 if value > 1.0 else value
+    reconcile_manual_weight_state()
 
 
 
 def normalized_weights_from_ui() -> Dict[str, float]:
-    if st.session_state.get("urgency", False):
-        return PRIORITY_ROC_WEIGHTS_FULL.copy()
-
-    return PRIORITY_WEIGHTS.copy()
+    if st.session_state.get("weight_mode", "roc") == "manual":
+        return manual_weights_from_ui()
+    return roc_weights_from_ui()
 
 
 def clear_run_state():
@@ -667,28 +1086,44 @@ def clear_run_state():
 
 def build_api_payload() -> Dict:
     weights = normalized_weights_from_ui()
-    manual_seed = int(st.session_state.manual_seed) if st.session_state.seed_mode == "Manual" else None
-    scenario = "peak_period" if st.session_state.peak_mode else "baseline"
-    return {
+    uploaded_dataset = st.session_state.get("uploaded_request_dataset")
+    use_uploaded_dataset = isinstance(uploaded_dataset, list) and len(uploaded_dataset) > 0
+    peak_mode = bool(st.session_state.get("peak_mode", DEFAULT_STATE["peak_mode"])) and not use_uploaded_dataset
+    scenario = "peak_period" if peak_mode else "baseline"
+    payload = {
         "scheduler_type": st.session_state.scheduler_type,
         "allocator_type": st.session_state.allocator_type,
         "num_staff": int(st.session_state.get("num_staff", DEFAULT_STATE["num_staff"])),
         "quota_limit": int(st.session_state.get("quota_limit", DEFAULT_STATE["quota_limit"])),
-        "total_requests": int(st.session_state.get("total_requests", DEFAULT_STATE["total_requests"])),
-        "urgency_base": 8 if st.session_state.peak_mode else 5,
-        "imbalance_factor": int(st.session_state.get("imbalance_factor", DEFAULT_STATE["imbalance_factor"])),
+        "total_requests": len(uploaded_dataset) if use_uploaded_dataset else int(st.session_state.get("total_requests", DEFAULT_STATE["total_requests"])),
+        "urgency_base": 8 if peak_mode else 5,
+        "imbalance_factor": 0,
         "num_absent_staff": int(st.session_state.num_absent_staff) if st.session_state.enable_absence else 0,
-        "random_seed": manual_seed,
+        "random_seed": None,
+        "request_composition": request_composition_from_ui(),
         "work_start": st.session_state.work_start_time.strftime("%H:%M"),
         "work_end": st.session_state.work_end_time.strftime("%H:%M"),
         "priority_weights": weights,
         "scenario": scenario,
         "urgency": bool(st.session_state.urgency),
-        "disable_generated_requests": bool(st.session_state.get("disable_generated_requests", False))
+        "disable_generated_requests": bool(st.session_state.get("disable_generated_requests", False)) or use_uploaded_dataset
     }
+    if use_uploaded_dataset:
+        payload["custom_requests"] = uploaded_dataset
+        payload["uploaded_request_dataset_mode"] = True
+        payload["align_custom_dates"] = False
+    return payload
 
 
 def run_simulation_now():
+    if (
+        st.session_state.scheduler_type == "WEIGHTED"
+        and st.session_state.get("weight_mode", "roc") == "manual"
+        and not manual_weights_complete()
+    ):
+        st.error(f"Manual weights must total 1.00 before running. Current total: {manual_weight_total():.2f}")
+        return
+
     st.session_state.comparison_df = None
     st.session_state.comparison_details = None
 
@@ -713,6 +1148,7 @@ def run_simulation_now():
                 mock_engine.waiting_queue = waiting_queue
                 mock_engine.staff_pool = staff_pool
                 mock_engine.priority_weights = results.get("priority_weights", {})
+                mock_engine.custom_criteria = results.get("custom_criteria", CUSTOM_CRITERIA)
                 mock_engine.workday_minutes = 9 * 60
                 mock_engine.urgency = payload.get("urgency", False)
 
@@ -863,6 +1299,52 @@ def render_theme_table(df: pd.DataFrame, height_px: int = 320):
         unsafe_allow_html=True,
     )
 
+
+def parse_request_dataset_csv(uploaded_file) -> List[Dict[str, Any]]:
+    df = pd.read_csv(uploaded_file)
+    if "requester_type" not in df.columns and "requester_status" in df.columns:
+        df["requester_type"] = df["requester_status"]
+
+    # Backward/forward compatibility for exported lifecycle dataset columns.
+    # The newer export uses concise event-style names, while the engine expects
+    # the older internal field names when replaying the dataset.
+    column_aliases = {
+        "requirements_partial": "requirements_partial_time",
+        "requirements_complete": "requirements_complete_time",
+        "payment_paid": "payment_time",
+    }
+    for source_col, target_col in column_aliases.items():
+        if target_col not in df.columns and source_col in df.columns:
+            df[target_col] = df[source_col]
+
+    if "requirements_stage" not in df.columns:
+        df["requirements_stage"] = "complete"
+    if "completeness_of_requirements" not in df.columns:
+        df["completeness_of_requirements"] = 1.0
+    if "payment_status" not in df.columns:
+        df["payment_status"] = "Paid"
+
+    required = {"college", "document_type", "requester_type", "urgency", "submission_time"}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise ValueError(f"Missing required columns: {', '.join(missing)}")
+
+    rows = []
+    for index, row in df.iterrows():
+        item = {}
+        for column, value in row.items():
+            if pd.isna(value):
+                item[column] = None
+            elif hasattr(value, "item"):
+                item[column] = value.item()
+            else:
+                item[column] = value
+        item["request_id"] = item.get("request_id") or f"UPLOAD{index + 1:04d}"
+        item["urgency"] = int(item.get("urgency") or 5)
+        source = str(item.get("source", "")).strip().lower()
+        item["is_custom"] = bool(item.get("is_custom", False)) or source == "custom"
+        rows.append(item)
+    return rows
 
 def run_variant_for_figure(scheduler_type: str, allocator_type: str) -> Optional[Dict]:
     last_run = st.session_state.get("last_run_config")
@@ -1370,9 +1852,278 @@ def render_custom_request_manager():
         st.info("No custom requests in the database. Add one above or via API. http://localhost:5000/api/custom-requests")
 
 
+def _source_options(source_field: str) -> List[Any]:
+    options = CRITERIA_SOURCE_OPTIONS.get(source_field)
+    if options:
+        return options
+    if source_field == "requester_type":
+        return list(REQUESTER_PRIORITY.keys())
+    if source_field == "document_type":
+        return list(DOCUMENT_COMPLEXITY.keys())
+    if source_field == "college":
+        return COLLEGES
+    if source_field == "urgency":
+        return list(range(1, 11))
+    return []
+
+
+def render_custom_request_fields_manager():
+    st.caption(
+        "Define generated request fields here. Option scores are normalized influence values from 0.00 to 1.00."
+    )
+
+    if CUSTOM_REQUEST_FIELDS:
+        field_df = pd.DataFrame([
+            {
+                "Key": field.get("key"),
+                "Name": field.get("label"),
+                "Options": ", ".join(
+                    f"{option.get('label')}={float(option.get('score', 0.0)):.2f}"
+                    for option in field.get("options", [])
+                ),
+            }
+            for field in CUSTOM_REQUEST_FIELDS
+        ])
+        st.dataframe(field_df, use_container_width=True, hide_index=True)
+        delete_field_key = st.selectbox(
+            "Delete request field",
+            [field.get("key") for field in CUSTOM_REQUEST_FIELDS],
+            format_func=lambda key: CRITERIA_SOURCE_FIELDS.get(key, key),
+            key="delete_request_field_key",
+        )
+        if st.button("Delete Field", key="delete_request_field_btn", use_container_width=True):
+            try:
+                response = requests.delete(f"{BACKEND_URL}/api/request-fields/{delete_field_key}", timeout=5)
+                if response.status_code == 200:
+                    fetch_backend_config.clear()
+                    reset_composition_group(delete_field_key)
+                    st.success(f"Deleted {CRITERIA_SOURCE_FIELDS.get(delete_field_key, delete_field_key)}")
+                    st.rerun()
+                else:
+                    st.error(response.text)
+            except Exception as exc:
+                st.error(f"Error deleting request field: {exc}")
+    else:
+        st.info("No custom request fields yet.")
+
+    with st.form("custom_request_field_form"):
+        field_label = st.text_input("Field Name", key="request_field_label_input")
+        field_key = st.text_input(
+            "Field Key",
+            key="request_field_key_input",
+            help="Optional. Leave blank to generate from the field name, e.g. Request Reason -> request_reason.",
+        )
+        st.caption("Category options and their normalized influence scores.")
+        option_rows = st.number_input(
+            "Number of Options",
+            min_value=1,
+            max_value=12,
+            value=3,
+            step=1,
+            key="request_field_option_count",
+        )
+        options = []
+        for index in range(int(option_rows)):
+            label_col, score_col = st.columns([0.68, 0.32])
+            option_label = label_col.text_input(
+                f"Option {index + 1}",
+                key=f"request_field_option_label_{index}",
+            )
+            option_score = score_col.number_input(
+                "Score",
+                min_value=0.0,
+                max_value=1.0,
+                value=1.0 if index == 0 else 0.0,
+                step=0.05,
+                format="%.2f",
+                key=f"request_field_option_score_{index}",
+            )
+            if option_label.strip():
+                options.append({"label": option_label.strip(), "score": float(option_score)})
+
+        submitted = st.form_submit_button("Add Field", use_container_width=True)
+
+    if submitted:
+        payload = {
+            "label": field_label,
+            "key": field_key,
+            "type": "category",
+            "options": options,
+        }
+        try:
+            response = requests.post(f"{BACKEND_URL}/api/request-fields", json=payload, timeout=5)
+            if response.status_code == 201:
+                fetch_backend_config.clear()
+                st.success("Request field added. It now has its own composition mix.")
+                st.rerun()
+            else:
+                st.error(response.text)
+        except Exception as exc:
+            st.error(f"Error adding request field: {exc}")
+
+
+def render_custom_criteria_manager():
+    st.caption("Link a custom request field into the weighted priority model.")
+
+    if CUSTOM_CRITERIA:
+        criteria_df = pd.DataFrame([
+            {
+                "Key": item.get("key"),
+                "Name": item.get("label"),
+                "Field": CRITERIA_SOURCE_FIELDS.get(item.get("source_field"), item.get("source_field")),
+                "Rule": "Request field score",
+            }
+            for item in CUSTOM_CRITERIA
+        ])
+        st.dataframe(criteria_df, use_container_width=True, hide_index=True)
+        delete_key = st.selectbox(
+            "Delete custom criterion",
+            [item.get("key") for item in CUSTOM_CRITERIA],
+            format_func=lambda key: format_criterion_label(key),
+            key="delete_custom_criterion_key",
+        )
+        if st.button("Delete Criterion", key="delete_custom_criterion_btn", use_container_width=True):
+            try:
+                response = requests.delete(f"{BACKEND_URL}/api/criteria/{delete_key}", timeout=5)
+                if response.status_code == 200:
+                    fetch_backend_config.clear()
+                    st.success(f"Deleted {format_criterion_label(delete_key)}")
+                    st.rerun()
+                else:
+                    st.error(response.text)
+            except Exception as exc:
+                st.error(f"Error deleting criterion: {exc}")
+    else:
+        st.info("No custom criteria yet.")
+
+    linked_fields = {
+        item.get("source_field")
+        for item in CUSTOM_CRITERIA
+    }
+    available_custom_fields = [
+        field
+        for field in CUSTOM_REQUEST_FIELDS
+        if field.get("key") not in linked_fields
+    ]
+    if not available_custom_fields:
+        st.info("Add a custom request field first, or delete an existing linked criterion to relink it.")
+        return
+
+    with st.form("custom_criteria_form"):
+        label = st.text_input("Criterion Name", key="criterion_label_input")
+        source_field = st.selectbox(
+            "Source Field",
+            [field.get("key") for field in available_custom_fields],
+            format_func=lambda key: CRITERIA_SOURCE_FIELDS.get(key, key),
+            key="criterion_source_field",
+        )
+        st.caption("The selected request field's saved 0.00 to 1.00 option scores will be used directly.")
+
+        submitted = st.form_submit_button("Add Criterion", use_container_width=True)
+
+    if submitted:
+        payload = {
+            "label": label,
+            "source_field": source_field,
+            "scoring_type": "field_score",
+        }
+
+        try:
+            response = requests.post(f"{BACKEND_URL}/api/criteria", json=payload, timeout=5)
+            if response.status_code == 201:
+                fetch_backend_config.clear()
+                st.success("Custom criterion added. It will now appear in the criteria selector.")
+                st.rerun()
+            else:
+                st.error(response.text)
+        except Exception as exc:
+            st.error(f"Error adding criterion: {exc}")
+
+
+def render_composition_group(title: str, group: str, *, expanded: bool = False, disabled: bool = False):
+    defaults = default_composition_values(group)
+    with st.expander(title, expanded=expanded):
+        if disabled:
+            st.info("Disabled in Dataset Mode. Uploaded datasets already contain fixed request values.")
+        st.caption(
+            "Use quick target share for exact percentages, or edit the raw values manually below. "
+            "Applied targets stay locked while the remaining share is distributed across unlocked options. "
+            "Reset clears locked targets and returns this group to the currently active scenario defaults."
+        )
+
+        target_col, share_col, apply_col, reset_col = st.columns([0.40, 0.24, 0.18, 0.18])
+        target_option = target_col.selectbox(
+            "Target option",
+            list(defaults.keys()),
+            key=f"{group}_target_option",
+            disabled=disabled,
+        )
+        target_share = share_col.number_input(
+            "Target share",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(st.session_state.get(f"{group}_target_share_pct", 80.0)),
+            step=1.0,
+            format="%.1f",
+            key=f"{group}_target_share_pct",
+            help="Example: 80 means this option receives 80% of generated requests and the remaining 20% is distributed to the others.",
+            disabled=disabled,
+        )
+        if apply_col.button("Apply", key=f"apply_{group}_target", use_container_width=True, disabled=disabled):
+            set_composition_share(group, target_option, target_share / 100.0)
+            st.rerun(scope="fragment")
+        if reset_col.button("Reset", key=f"reset_{group}_composition", use_container_width=True, disabled=disabled):
+            reset_composition_group(group)
+            st.rerun(scope="fragment")
+
+        locked_targets = get_composition_locked_targets(group)
+        if locked_targets:
+            st.caption(
+                "Locked targets: "
+                + ", ".join(
+                    f"{option}={share:.1%}"
+                    for option, share in locked_targets.items()
+                )
+            )
+
+        total = 0.0
+        for option, default_value in defaults.items():
+            state_key = composition_state_key(group, option)
+            total += float(st.number_input(
+                str(option),
+                min_value=0.0,
+                value=float(st.session_state.get(state_key, default_value)),
+                step=0.01,
+                format="%.4f",
+                key=state_key,
+                disabled=disabled,
+            ))
+        if total <= 0:
+            st.warning("Set at least one value above 0. If all values are 0, the backend falls back to defaults.")
+        else:
+            normalized_values = {
+                option: float(st.session_state.get(composition_state_key(group, option), 0.0)) / total
+                for option in defaults.keys()
+            }
+            st.caption(
+                "Generated mix: "
+                + ", ".join(
+                    f"{option}={share:.1%}"
+                    for option, share in normalized_values.items()
+                    if share > 0
+                )
+            )
+
+
 @st.fragment
 def render_sidebar_controls():
     st.header("🎛️ Simulation Controls")
+
+    pending_preset = st.session_state.pop("_pending_preset_to_load", None)
+    if isinstance(pending_preset, dict):
+        apply_ui_config(pending_preset)
+        loaded_name = st.session_state.pop("_pending_preset_name", "selected preset")
+        st.success(f"Loaded preset: {loaded_name}")
 
     run_col, reset_col = st.columns(2)
     run_clicked = run_col.button("🚀 Run", use_container_width=True)
@@ -1398,30 +2149,87 @@ def render_sidebar_controls():
         with st.expander("📊 Priority Weights", expanded=False):
 
             st.subheader("Weighted Priority")
+            st.caption(
+                "Gate checks: "
+                + ", ".join(format_criterion_label(key) for key in GATE_CRITERIA_KEYS)
+                + ". These must be ready before assignment and are not weighted."
+            )
+            with st.expander("Custom Criteria", expanded=False):
+                render_custom_criteria_manager()
 
-            for key in active_criteria():
-                state_key = weight_state_key(key)
-                if state_key not in st.session_state:
-                    if key == "urgency":
-                        default_raw = PRIORITY_ROC_WEIGHTS_FULL.get(key, 0.02)
-                    else:
-                        default_raw = PRIORITY_WEIGHTS.get(key, 0.0)
+            available_criteria = active_criteria()
+            sync_selected_weight_criteria()
+            st.multiselect(
+                "Criteria included in priority score",
+                available_criteria,
+                default=st.session_state.selected_weight_criteria,
+                key="selected_weight_criteria",
+                format_func=format_criterion_label,
+            )
 
-                    default_val = int(default_raw * 100) if isinstance(default_raw, (int, float)) else 50
-                    st.session_state[state_key] = default_val
+            st.radio(
+                "Weighting mode",
+                list(WEIGHT_MODE_OPTIONS.keys()),
+                key="weight_mode",
+                format_func=lambda value: WEIGHT_MODE_OPTIONS[value],
+                horizontal=True,
+            )
 
-            for key in active_criteria():
-                st.slider(
-                    f"Weight: {format_criterion_label(key)}",
-                    min_value=0,
-                    max_value=100,
-                    step=1,
-                    key=weight_state_key(key),
+            selected_criteria = get_ordered_selected_criteria()
+            if st.session_state.weight_mode == "roc":
+                st.caption("Rank criteria from highest to lowest priority. ROC weights are calculated from this order.")
+                ordered_criteria = get_criteria_order()
+                for index, key in enumerate(ordered_criteria):
+                    rank_col, label_col, up_col, down_col = st.columns([0.10, 0.70, 0.10, 0.10], vertical_alignment="center")
+                    rank_col.markdown(f"**{index + 1}.**")
+                    label_col.markdown(format_criterion_label(key))
+                    if up_col.button("↑", key=f"move_up_{key}", disabled=index == 0, help="Move higher"):
+                        ordered_criteria[index - 1], ordered_criteria[index] = ordered_criteria[index], ordered_criteria[index - 1]
+                        set_criteria_order(ordered_criteria)
+                        st.rerun(scope="fragment")
+                    if down_col.button("↓", key=f"move_down_{key}", disabled=index == len(ordered_criteria) - 1, help="Move lower"):
+                        ordered_criteria[index + 1], ordered_criteria[index] = ordered_criteria[index], ordered_criteria[index + 1]
+                        set_criteria_order(ordered_criteria)
+                        st.rerun(scope="fragment")
+            else:
+                reconcile_manual_weight_state()
+                st.caption("Manual weights use 0.00 to 1.00 values and cannot exceed a total of 1.00.")
+                for key in selected_criteria:
+                    state_key = weight_state_key(key)
+                    current_value = max(0.0, min(float(st.session_state.get(state_key, 0.0)), 1.0))
+                    other_total = sum(
+                        max(0.0, min(float(st.session_state.get(weight_state_key(other_key), 0.0)), 1.0))
+                        for other_key in selected_criteria
+                        if other_key != key
+                    )
+                    max_allowed = max(0.0, min(1.0, 1.0 - other_total))
+                    disabled = current_value <= 0.0 and max_allowed <= 0.001
+                    if current_value > max_allowed:
+                        current_value = max_allowed
+                    st.session_state[state_key] = current_value
+                    if disabled:
+                        st.session_state[state_key] = 0.0
+                    st.slider(
+                        f"Weight: {format_criterion_label(key)}",
+                        min_value=0.0,
+                        max_value=1.0 if disabled else max(float(max_allowed), 0.01),
+                        step=0.01,
+                        key=state_key,
+                        disabled=disabled,
+                    )
+                manual_total = sum(
+                    float(st.session_state.get(weight_state_key(key), 0.0))
+                    for key in selected_criteria
                 )
+                st.progress(min(manual_total, 1.0))
+                st.caption(f"Manual total: {manual_total:.2f} / 1.00")
+                if manual_total < 0.999:
+                    st.warning(f"Assign the remaining {1.0 - manual_total:.2f} before running.")
 
             current_weights = normalized_weights_from_ui()
+            weight_caption = "Configured" if st.session_state.get("weight_mode", "roc") == "manual" else "Normalized"
             st.caption(
-                "Normalized: "
+                f"{weight_caption}: "
                 + ", ".join(f"{format_criterion_label(k)}={v:.2f}" for k, v in current_weights.items()),
                 help="Tie-break rule: earlier submission_time wins when scores are equal."
             )
@@ -1469,23 +2277,71 @@ def render_sidebar_controls():
 
     if "total_requests" not in st.session_state:
         st.session_state.total_requests = DEFAULT_STATE["total_requests"]
-
-    st.checkbox(
-        "Disable Generated Requests",
-        value=False,
-        key="disable_generated_requests",
-        help="If enabled, only custom requests stored in the database are simulated."
-    )
+    if "disable_generated_requests" not in st.session_state:
+        st.session_state.disable_generated_requests = DEFAULT_STATE["disable_generated_requests"]
 
     def on_peak_mode_change():
-        if st.session_state.peak_mode:
-            st.session_state.previous_total_requests = st.session_state.total_requests
+        if st.session_state.get("peak_mode", False):
+            st.session_state.previous_total_requests = st.session_state.get("total_requests", DEFAULT_STATE["total_requests"])
             st.session_state.total_requests = 300
         else:
             if "previous_total_requests" in st.session_state:
                 st.session_state.total_requests = (
                     st.session_state.previous_total_requests
                 )
+        reset_composition_group("document_type")
+
+    with st.expander("Request Dataset CSV", expanded=False):
+        uploaded_dataset_file = st.file_uploader(
+            "Upload Request Dataset CSV",
+            type=["csv"],
+            key="request_dataset_uploader",
+            help="Uses this CSV for the run only. It is not saved into the custom request database.",
+        )
+        if uploaded_dataset_file is not None:
+            try:
+                rows = parse_request_dataset_csv(uploaded_dataset_file)
+                st.session_state.uploaded_request_dataset = rows
+                st.session_state.uploaded_request_dataset_name = uploaded_dataset_file.name
+                st.session_state.disable_generated_requests = True
+                st.session_state.peak_mode = False
+                st.success(f"Loaded {len(rows)} requests from {uploaded_dataset_file.name}")
+            except Exception as exc:
+                st.session_state.uploaded_request_dataset = None
+                st.session_state.uploaded_request_dataset_name = None
+                st.error(f"Could not load dataset: {exc}")
+
+        if st.session_state.get("uploaded_request_dataset"):
+            st.caption(
+                f"Active dataset: {st.session_state.get('uploaded_request_dataset_name')} "
+                f"({len(st.session_state.uploaded_request_dataset)} requests). Generated requests will be disabled for the next run."
+            )
+            if st.button("Clear Uploaded Dataset", key="clear_uploaded_request_dataset", use_container_width=True):
+                st.session_state.uploaded_request_dataset = None
+                st.session_state.uploaded_request_dataset_name = None
+                st.session_state.disable_generated_requests = DEFAULT_STATE["disable_generated_requests"]
+                st.rerun(scope="fragment")
+
+    dataset_mode = bool(st.session_state.get("uploaded_request_dataset"))
+    if dataset_mode:
+        st.session_state.disable_generated_requests = True
+        st.session_state.peak_mode = False
+        st.info(
+            "Dataset Mode is active. Request generation controls are disabled because "
+            "the uploaded CSV is the source of requests for the next run. Clear the "
+            "uploaded dataset to re-enable generated-request settings."
+        )
+
+    st.checkbox(
+        "Disable Generated Requests",
+        key="disable_generated_requests",
+        disabled=dataset_mode,
+        help=(
+            "Locked on while Dataset Mode is active. Clear the uploaded dataset to enable generated requests again."
+            if dataset_mode
+            else "If enabled, only custom requests stored in the database are simulated."
+        ),
+    )
 
     st.slider(
         "Total Daily Requests",
@@ -1494,8 +2350,9 @@ def render_sidebar_controls():
         step=10,
         key="total_requests",
         disabled=(
-            st.session_state.peak_mode
-            or st.session_state.disable_generated_requests
+            st.session_state.get("peak_mode", False)
+            or st.session_state.get("disable_generated_requests", False)
+            or dataset_mode
         ),
     )
 
@@ -1503,38 +2360,63 @@ def render_sidebar_controls():
     with st.expander("🛠️ Custom Request Manager", expanded=False):
         render_custom_request_manager()
     st.subheader("Features")
-    st.checkbox("⚡ Enable Urgency", value=False, key="urgency")
+    st.checkbox("⚡ Enable Urgency", key="urgency")
 
-    st.checkbox("📈 Peak Period", value=False, key="peak_mode", on_change=on_peak_mode_change,)
-    st.slider("⚖️ College Imbalance (%)", min_value=0, max_value=100, step=5, key="imbalance_factor")
-
-    st.subheader("Seed")
-    st.radio("Seed Mode", ["Auto", "Manual"], key="seed_mode", horizontal=True)
-    if st.session_state.seed_mode == "Manual":
-        st.number_input(
-            "Manual Seed",
-            min_value=1,
-            max_value=2_147_483_647,
-            step=1,
-            key="manual_seed",
-        )
-    else:
-        st.caption("Auto mode will generate a seed and show it in the results.")
+    st.checkbox(
+        "📈 Peak Period",
+        key="peak_mode",
+        on_change=on_peak_mode_change,
+        disabled=dataset_mode,
+        help="Disabled in Dataset Mode because the uploaded dataset already defines request demand." if dataset_mode else None,
+    )
+    st.subheader("Request Composition")
+    st.caption(
+        "Composition is the source of truth for generated request likelihood. "
+        "College Mix controls college demand directly. Normal documents are equal; "
+        "Peak Period boosts TOR/TC and Certification."
+    )
+    with st.expander("Custom Request Fields", expanded=False):
+        render_custom_request_fields_manager()
+    render_composition_group("College Mix", "college", expanded=False, disabled=dataset_mode)
+    render_composition_group("Requester Type Mix", "requester_type", expanded=False, disabled=dataset_mode)
+    render_composition_group("Document Type Mix", "document_type", expanded=False, disabled=dataset_mode)
+    for field in CUSTOM_REQUEST_FIELDS:
+        field_key = field.get("key")
+        if field_key:
+            render_composition_group(
+                f"{field.get('label', field_key)} Mix",
+                str(field_key),
+                expanded=False,
+                disabled=dataset_mode,
+            )
 
     st.subheader("Presets")
     presets = load_presets()
     preset_names = ["(select)"] + sorted(list(presets.keys()))
     selected_preset = st.selectbox("Saved Presets", preset_names)
 
-    load_col, save_col = st.columns(2)
+    load_col, save_col, remove_col = st.columns(3)
     load_clicked = load_col.button("Load", use_container_width=True)
     save_clicked = save_col.button("Save", use_container_width=True)
+    remove_clicked = remove_col.button(
+        "Remove",
+        use_container_width=True,
+        disabled=selected_preset not in presets,
+    )
 
     preset_name_input = st.text_input("Preset Name", value="")
 
     if load_clicked and selected_preset in presets:
-        apply_ui_config(presets[selected_preset])
+        st.session_state["_pending_preset_to_load"] = presets[selected_preset]
+        st.session_state["_pending_preset_name"] = selected_preset
         st.rerun()
+
+    if remove_clicked and selected_preset in presets:
+        removed_name = selected_preset
+        presets.pop(removed_name, None)
+        save_presets(presets)
+        st.success(f"Removed preset: {removed_name}")
+        st.rerun(scope="fragment")
 
     if save_clicked:
         name = preset_name_input.strip()
@@ -1548,7 +2430,7 @@ def render_sidebar_controls():
     if st.session_state.simulation_engine is not None:
         with st.expander("🐛 Debug: Urgency Status", expanded=False):
             st.markdown(f"**Checkbox State:** `{st.session_state.urgency}`")
-            st.markdown(f"**ROC Weight for Urgency:** `{PRIORITY_WEIGHTS.get('urgency', 'N/A')}`")
+            st.markdown(f"**Current Weight for Urgency:** `{normalized_weights_from_ui().get('urgency', 'N/A')}`")
                 
             if st.session_state.simulation_results and st.session_state.simulation_results.get('completed_requests'):
                 sample = st.session_state.simulation_results['completed_requests'][0]
@@ -1579,7 +2461,6 @@ staff_college_map = build_staff_college_map(engine.staff_pool)
 
 st.success("Simulation complete.")
 
-seed_used = results.get("seed_used")
 run_cfg = results.get("run_config", {})
 
 num_staff = run_cfg.get("num_staff")
@@ -1602,7 +2483,9 @@ all_reqs = results.get("generated_requests", [])
 total_custom = sum(1 for r in all_reqs if r.get("is_custom"))
 total_gen = sum(1 for r in all_reqs if not r.get("is_custom"))
 
-if disable_generated:
+if run_cfg.get("uploaded_request_dataset_mode"):
+    demand_mode = f"Uploaded Dataset ({len(all_reqs)} reqs)"
+elif disable_generated:
     demand_mode = f"⭐ Custom only ({total_custom} reqs)"
 else:
     demand_mode = f"🤖 Gen: {total_gen} | ⭐ Cust: {total_custom}"
@@ -1614,7 +2497,6 @@ scenario = run_cfg.get("scenario", "baseline")
 is_peak = (scenario == "peak_period" or run_cfg.get("peak_mode", False))
 peak_status = "🔥 Peak" if is_peak else "Regular"
 
-imbalance_factor = run_cfg.get("imbalance_factor", 0)
 
 scheduler_label = SCHEDULER_LABELS.get(results.get('scheduler_type'), results.get('scheduler_type'))
 allocator_label = ALLOCATOR_LABELS.get(results.get('allocator_type'), str(results.get('allocator_type')).replace('_', ' ').title())
@@ -1626,7 +2508,7 @@ st.markdown(
             <div>
                 <p class="hero-kicker">Simulation Snapshot</p>
                 <p class="hero-title">Scheduler: {scheduler_label} | Allocator: {allocator_label}</p>
-                <p class="hero-sub">Seed: {seed_used} | Mode: Custom sliders</p>
+                <p class="hero-sub">Mode: Configurable request composition</p>
             </div>
             <div class="hero-pill">Ready for playback</div>
         </div>
@@ -1650,12 +2532,7 @@ st.markdown(
             <div class="snap-item">
                 <span class="snap-label">📈 Peak Period</span>
                 <span class="snap-value">{peak_status}</span>
-            </div>
-            <div class="snap-item">
-                <span class="snap-label">⚖️ College Imbalance</span>
-                <span class="snap-value">{imbalance_factor}%</span>
-            </div>
-        </div>
+            </div>        </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -1686,19 +2563,19 @@ def render_playback_section(results, engine):
 
     controls_col1, controls_col2, controls_col3, controls_col4, controls_col5, controls_col6 = st.columns(6)
 
-    if controls_col1.button("▶ Play", use_container_width=True):
+    if controls_col1.button("Play", use_container_width=True):
         st.session_state.playback_playing = True
-    if controls_col2.button("⏸ Pause", use_container_width=True):
+    if controls_col2.button("Pause", use_container_width=True):
         st.session_state.playback_playing = False
-    if controls_col3.button("◀ Step", use_container_width=True):
+    if controls_col3.button("Step Back", use_container_width=True):
         st.session_state.playback_playing = False
         st.session_state.playback_frame = max(0, st.session_state.playback_frame - 1)
         force_slider_sync = True
-    if controls_col4.button("Step ▶", use_container_width=True):
+    if controls_col4.button("Step Forward", use_container_width=True):
         st.session_state.playback_playing = False
         st.session_state.playback_frame = min(max_step, st.session_state.playback_frame + 1)
         force_slider_sync = True
-    if controls_col5.button("⏭ End", use_container_width=True):
+    if controls_col5.button("End", use_container_width=True):
         st.session_state.playback_playing = False
         st.session_state.playback_frame = max_step
         force_slider_sync = True
@@ -1728,7 +2605,9 @@ def render_playback_section(results, engine):
             if isinstance(request_item, dict) and request_item.get("request_id"):
                 req_copy = request_item.copy()
                 sub_raw = req_copy.get("submission_time")
+                ready_raw = req_copy.get("ready_time")
                 req_copy["_submission_time_parsed"] = parse_event_time(sub_raw) if sub_raw else None
+                req_copy["_ready_time_parsed"] = parse_event_time(ready_raw) if ready_raw else req_copy["_submission_time_parsed"]
                 lookup[req_copy["request_id"]] = req_copy
         st.session_state.request_lookup = lookup
         st.session_state.cached_request_lookup_run_key = run_key
@@ -1779,15 +2658,16 @@ def render_playback_section(results, engine):
         if assignment.get("Request")
     }
 
-    waiting_rows = []
-    for waiting_item in frame_data["waiting"]:
-        request_id = waiting_item.get("Request")
-        if request_id in assigned_request_ids:
-            continue
-        request_meta = request_lookup.get(request_id, {})
-        event_time_raw = waiting_item.get("Time")
-        
-        is_custom_req = request_meta.get("is_custom", False)
+    is_weighted_scheduler = results.get("scheduler_type") == "WEIGHTED"
+    staff_college_map = build_staff_college_map(engine.staff_pool)
+
+    if current_event:
+        current_time = parse_event_time(current_event.get("time", ""))
+
+        routed_request_ids = set()
+        for assign_item in frame_data["assignments"]:
+            if assign_item.get("Request"):
+                routed_request_ids.add(assign_item["Request"])
         req_display = f"⭐ {request_id}" if is_custom_req else request_id
         
         waiting_rows.append(
@@ -1994,6 +2874,303 @@ def render_playback_section(results, engine):
             st.rerun(scope="fragment")
         else:
             st.session_state.playback_playing = False
+
+
+@st.fragment
+def render_playback_section(results, engine):
+    st.header("Playback")
+
+    event_log = results.get("event_log", [])
+    run_key = (results.get("seed_used"), results.get("scheduler_type"), results.get("allocator_type"))
+    if st.session_state.get("cached_decisions_run_key") != run_key:
+        st.session_state.decisions = routing_events(event_log)
+        st.session_state.cached_decisions_run_key = run_key
+    decisions = st.session_state.decisions
+
+    if not decisions:
+        st.warning("No request-routing decisions available for playback.")
+        return
+
+    max_step = len(decisions) - 1
+    st.session_state.playback_frame = min(st.session_state.playback_frame, max_step)
+    st.session_state.playback_frame_ui = min(max(st.session_state.playback_frame_ui, 1), max_step + 1)
+
+    force_slider_sync = False
+    controls_col1, controls_col2, controls_col3, controls_col4, controls_col5, controls_col6 = st.columns(6)
+    if controls_col1.button("Play", use_container_width=True, key="play_fixed"):
+        st.session_state.playback_playing = True
+    if controls_col2.button("Pause", use_container_width=True, key="pause_fixed"):
+        st.session_state.playback_playing = False
+    if controls_col3.button("Step Back", use_container_width=True, key="back_fixed"):
+        st.session_state.playback_playing = False
+        st.session_state.playback_frame = max(0, st.session_state.playback_frame - 1)
+        force_slider_sync = True
+    if controls_col4.button("Step Forward", use_container_width=True, key="step_fixed"):
+        st.session_state.playback_playing = False
+        st.session_state.playback_frame = min(max_step, st.session_state.playback_frame + 1)
+        force_slider_sync = True
+    if controls_col5.button("End", use_container_width=True, key="end_fixed"):
+        st.session_state.playback_playing = False
+        st.session_state.playback_frame = max_step
+        force_slider_sync = True
+    controls_col6.selectbox("Speed", list(SPEED_OPTIONS.keys()), key="playback_speed")
+
+    if force_slider_sync or (
+        st.session_state.playback_playing
+        and st.session_state.playback_frame_ui != st.session_state.playback_frame
+    ):
+        st.session_state.playback_frame_ui = st.session_state.playback_frame + 1
+
+    st.slider(
+        "Request Step",
+        min_value=1,
+        max_value=max_step + 1,
+        key="playback_frame_ui",
+        on_change=on_playback_slider_change,
+    )
+
+    frame_data = playback_state(decisions, st.session_state.playback_frame)
+    current_event = frame_data["current_event"]
+    if not current_event:
+        return
+
+    if st.session_state.get("cached_request_lookup_run_key") != run_key:
+        lookup = {}
+        for request_item in results.get("generated_requests", []):
+            if isinstance(request_item, dict) and request_item.get("request_id"):
+                req_copy = request_item.copy()
+                sub_raw = req_copy.get("submission_time")
+                ready_raw = req_copy.get("ready_time")
+                req_copy["_submission_time_parsed"] = parse_event_time(sub_raw) if sub_raw else None
+                req_copy["_ready_time_parsed"] = parse_event_time(ready_raw) if ready_raw else req_copy["_submission_time_parsed"]
+                lookup[req_copy["request_id"]] = req_copy
+        st.session_state.request_lookup = lookup
+        st.session_state.cached_request_lookup_run_key = run_key
+    request_lookup = st.session_state.request_lookup
+
+    staff_rows: Dict[str, List[Dict]] = {}
+    staff_meta: Dict[str, Dict] = {}
+    for staff in engine.staff_pool:
+        staff_rows[staff.staff_id] = []
+        staff_meta[staff.staff_id] = {"college": staff.college_affiliation, "quota": staff.quota_limit}
+
+    for assignment in frame_data["assignments"]:
+        staff_id = assignment.get("Staff") or "UNASSIGNED"
+        request_id = assignment.get("Request")
+        request_meta = request_lookup.get(request_id, {})
+        if staff_id not in staff_rows:
+            staff_rows[staff_id] = []
+            staff_meta[staff_id] = {"college": "-", "quota": None}
+        assigned_at_raw = assignment.get("Time")
+        assigned_at_dt = parse_event_time(str(assigned_at_raw)) if assigned_at_raw else None
+        staff_rows[staff_id].append(
+            {
+                "Request": request_id,
+                "College": request_meta.get("college", assignment.get("College")),
+                "Document": request_meta.get("document_type", "-"),
+                "Priority Score": round(float(request_meta.get("priority_score", assignment.get("Priority Score", 0.0)) or 0.0), 4),
+                "Queue Wait (h)": assignment.get("Queue Wait (h)"),
+                "Assigned At": assignment.get("Time"),
+                "_dt": assigned_at_dt,
+                "_date": assigned_at_dt.date() if assigned_at_dt else None,
+            }
+        )
+
+    current_time = parse_event_time(current_event.get("time", ""))
+    routed_request_ids = {
+        item.get("Request")
+        for item in frame_data["assignments"]
+        if item.get("Request")
+    }
+    is_weighted_scheduler = results.get("scheduler_type") == "WEIGHTED"
+    staff_college_map = build_staff_college_map(engine.staff_pool)
+
+    latest_rank_order: Dict[str, int] = {}
+    latest_rank_scores: Dict[str, float] = {}
+    if is_weighted_scheduler:
+        priority_events = [
+            event for event in event_log
+            if event.get("event_type") == "PRIORITY"
+            and parse_event_time(str(event.get("time", ""))) <= current_time
+        ]
+        if priority_events:
+            latest_priority = priority_events[-1]
+            latest_rank_order = {
+                str(request_id): index
+                for index, request_id in enumerate(latest_priority.get("ranked_request_ids") or [])
+            }
+            latest_rank_scores = {
+                str(request_id): float(score or 0.0)
+                for request_id, score in (latest_priority.get("ranked_scores") or {}).items()
+            }
+
+    pending_queue_rows = []
+    not_ready_waiting_rows = []
+    for request_id, request_meta in request_lookup.items():
+        submission_time = request_meta.get("_submission_time_parsed")
+        if not submission_time or submission_time > current_time or request_id in routed_request_ids:
+            continue
+        ready_time = request_meta.get("_ready_time_parsed") or submission_time
+        base_row = {
+            "Request": request_id,
+            "College": request_meta.get("college", "-"),
+            "Document": request_meta.get("document_type", "-"),
+            "Priority Score": round(float(latest_rank_scores.get(request_id, request_meta.get("priority_score", 0.0)) or 0.0), 4),
+            "Submitted": format_compact_datetime(request_meta.get("submission_time")),
+            "_sort_submission": submission_time,
+            "_rank": latest_rank_order.get(request_id, 999999),
+        }
+        if ready_time and current_time < ready_time:
+            not_ready_waiting_rows.append(
+                {
+                    **base_row,
+                    "Ready At": format_compact_datetime(request_meta.get("ready_time")),
+                    "Waiting Reason": "Pending requirements or payment",
+                    "Wait Until Ready (h)": round((ready_time - current_time).total_seconds() / 3600.0, 2),
+                }
+            )
+        else:
+            pending_queue_rows.append(
+                {
+                    **base_row,
+                    "Ready Since": format_compact_datetime(request_meta.get("ready_time") or request_meta.get("submission_time")),
+                    "Pending Wait (h)": round((current_time - ready_time).total_seconds() / 3600.0, 2),
+                }
+            )
+
+    if is_weighted_scheduler:
+        pending_queue_rows.sort(key=lambda row: (row.get("_rank", 999999), row["_sort_submission"]))
+    else:
+        pending_queue_rows.sort(key=lambda row: row["_sort_submission"])
+    not_ready_waiting_rows.sort(key=lambda row: row["_sort_submission"])
+    for row in pending_queue_rows + not_ready_waiting_rows:
+        row.pop("_sort_submission", None)
+        row.pop("_rank", None)
+
+    card1, card2, card3, card4, card5, card6 = st.columns([1.5, 1, 1, 1, 1, 1])
+    card1.metric("Simulation Clock", current_time.strftime("%Y-%m-%d %H:%M"))
+    card2.metric("Current Request Step", f"{st.session_state.playback_frame + 1}/{max_step + 1}")
+    card3.metric("Processed Decisions", frame_data["processed_count"])
+    card4.metric("Assigned So Far", frame_data["assigned_count"])
+    card5.metric("Pending Ready", len(pending_queue_rows))
+    card6.metric("Not Ready", len(not_ready_waiting_rows))
+
+    routing_event_label = str(current_event.get("event_type", "")).replace("_", " ").title()
+    routing_detail_label = str(current_event.get("details", "")).replace("_", " ").title()
+    st.markdown(
+        "**Current Routing Decision:** "
+        f"{routing_event_label} | "
+        f"Request={current_event.get('request_id')} | "
+        f"Staff={format_staff_label(current_event.get('staff_id'), staff_college_map)} | "
+        f"Details={routing_detail_label}"
+    )
+
+    queue_col, waiting_col = st.columns(2)
+    with queue_col:
+        st.subheader("Pending Queue")
+        st.caption("Ready requests that have arrived but cannot be assigned at this step.")
+        if pending_queue_rows:
+            render_theme_table(pd.DataFrame(pending_queue_rows), height_px=320)
+        else:
+            st.caption("No ready requests are blocked from assignment at this step.")
+
+    with waiting_col:
+        st.subheader("Unassignable Waiting List")
+        st.caption("Arrived requests still blocked by requirements or payment readiness.")
+        if not_ready_waiting_rows:
+            render_theme_table(pd.DataFrame(not_ready_waiting_rows), height_px=320)
+        else:
+            st.caption("No not-ready requests at this step.")
+
+    st.subheader("Staff Capacity View")
+    quota_enforced = results.get("allocator_type") != "quota_free"
+    current_day = current_time.date()
+    capacity_rows = []
+    for staff in engine.staff_pool:
+        rows_for_staff = staff_rows.get(staff.staff_id, [])
+        assigned_today = sum(1 for row in rows_for_staff if row.get("_date") == current_day)
+        total_assigned = len(rows_for_staff)
+        row = {
+            "Staff ID": staff.staff_id,
+            "Staff": format_staff_label(staff.staff_id, staff_college_map),
+            "College": staff.college_affiliation,
+            "Assigned Today": assigned_today,
+            "Total Assigned": total_assigned,
+        }
+        if quota_enforced:
+            row["Quota/Day"] = staff.quota_limit
+            row["Today Fill %"] = round((assigned_today / max(staff.quota_limit, 1)) * 100.0, 1)
+        capacity_rows.append(row)
+
+    capacity_df = pd.DataFrame(capacity_rows)
+    assigned_today_map = {row["Staff ID"]: row["Assigned Today"] for row in capacity_rows}
+    total_assigned_map = {row["Staff ID"]: row["Total Assigned"] for row in capacity_rows}
+
+    fig_capacity = go.Figure()
+    fig_capacity.add_trace(
+        go.Bar(
+            name="Assigned Today",
+            x=capacity_df["Staff"],
+            y=capacity_df["Assigned Today"],
+            marker_color="#a855f7",
+            text=capacity_df["Assigned Today"],
+            textposition="outside",
+        )
+    )
+    if quota_enforced:
+        fig_capacity.add_trace(
+            go.Bar(
+                name="Quota per Day",
+                x=capacity_df["Staff"],
+                y=capacity_df["Quota/Day"],
+                marker_color="#22d3ee",
+                opacity=0.55,
+                text=capacity_df["Quota/Day"],
+                textposition="outside",
+            )
+        )
+    fig_capacity.update_layout(
+        title="Daily Staff Capacity at Current Request Step",
+        xaxis_title="Staff",
+        yaxis_title="Requests",
+        barmode="group",
+        height=360,
+    )
+    apply_plot_theme(fig_capacity)
+    st.plotly_chart(fig_capacity, use_container_width=True, config={"staticPlot": True})
+
+    st.subheader("Live Staff Request Lists")
+    ordered_staff_ids = [staff.staff_id for staff in engine.staff_pool]
+    for idx in range(0, len(ordered_staff_ids), 3):
+        row_ids = ordered_staff_ids[idx: idx + 3]
+        row_cols = st.columns(3)
+        for col, staff_id in zip(row_cols, row_ids):
+            with col:
+                meta = staff_meta.get(staff_id, {"college": "-", "quota": None})
+                assigned_today = assigned_today_map.get(staff_id, 0)
+                total_assigned = total_assigned_map.get(staff_id, 0)
+                if quota_enforced and meta.get("quota") is not None:
+                    quota_value = int(meta["quota"])
+                    st.metric(f"{staff_id} ({meta['college']})", f"{assigned_today}/{quota_value}", delta=f"Total {total_assigned}")
+                    if assigned_today >= quota_value:
+                        st.warning("Quota full at this step")
+                else:
+                    st.metric(f"{staff_id} ({meta['college']})", f"{total_assigned} assigned")
+
+                rows = staff_rows.get(staff_id, [])
+                if rows:
+                    render_theme_table(pd.DataFrame(staff_rows_with_day_separators(rows)), height_px=340)
+                else:
+                    st.caption("No requests routed here yet.")
+
+    if st.session_state.playback_playing:
+        if st.session_state.playback_frame < max_step:
+            tm.sleep(SPEED_OPTIONS.get(st.session_state.playback_speed, 0.45))
+            st.session_state.playback_frame += 1
+            st.rerun(scope="fragment")
+        else:
+            st.session_state.playback_playing = False
+
 
 render_playback_section(results, engine)
 
@@ -2400,6 +3577,15 @@ else:
         st.write(f"**Payment Status:** {getattr(selected_req, 'payment_status', '-')}")
         st.write(f"**Priority Score:** {float(getattr(selected_req, 'priority_score', 0.0)):.4f}")
         st.write(f"**Assigned Staff:** {format_staff_label(selected_req.assigned_staff, staff_college_map)}")
+        for field in CUSTOM_REQUEST_FIELDS:
+            field_key = str(field.get("key"))
+            if not field_key:
+                continue
+            extra_fields = getattr(selected_req, "extra_fields", {}) or {}
+            if field_key in extra_fields:
+                score_value = extra_fields.get(f"{field_key}_score")
+                score_text = f" ({float(score_value):.2f})" if score_value is not None else ""
+                st.write(f"**{field.get('label', field_key)}:** {extra_fields.get(field_key)}{score_text}")
 
     with d2:
         st.write(f"**Submission:** {format_compact_datetime(selected_req.submission_time)}")
@@ -2437,12 +3623,23 @@ else:
                 request_obj.priority_score,
             )
             try:
-                return request_obj.calculate_priority(
-                    at_time,
-                    engine.priority_weights,
-                    engine.workday_minutes,
-                    urgency=engine.urgency,
-                )
+                try:
+                    return request_obj.calculate_priority(
+                        at_time,
+                        engine.priority_weights,
+                        engine.workday_minutes,
+                        urgency=engine.urgency,
+                        custom_criteria=getattr(engine, "custom_criteria", []),
+                    )
+                except TypeError as exc:
+                    if "custom_criteria" not in str(exc):
+                        raise
+                    return request_obj.calculate_priority(
+                        at_time,
+                        engine.priority_weights,
+                        engine.workday_minutes,
+                        urgency=engine.urgency,
+                    )
             finally:
                 (
                     request_obj.completeness_of_requirements,
@@ -2476,66 +3673,10 @@ else:
             render_theme_table(stage_df, height_px=220)
             with st.expander("Debug: weight & contribution breakdown", expanded=False):
                 st.write("Engine priority_weights:")
-                st.write(engine.priority_weights)
-
-                contrib_rows = []
-                for label, ts in stage_points:
-                    if ts is None:
-                        continue
-                    # compute feature scores
-                    selected_req.update_status(ts)
-                    completeness_norm = max(0.0, min(float(selected_req.completeness_of_requirements), 1.0))
-                    requester_raw = REQUESTER_PRIORITY.get(selected_req.requester_type, 3)
-                    requester_norm = requester_raw / max(float(REQUESTER_PRIORITY_MAX), 1.0)
-                    waiting_minutes = max(0.0, (ts - selected_req.submission_time).total_seconds() / 60.0)
-                    submission_norm = _soft_cap(waiting_minutes, max(float(engine.workday_minutes * 2), 1.0))
-                    base_duration, _ = _duration_to_schedule(DOCUMENT_COMPLEXITY.get(selected_req.document_type, 1))
-                    complexity_days = max(base_duration.total_seconds() / 86400.0, 1e-6)
-                    doc_norm = 1.0 / (1.0 + complexity_days)
-                    college_norm = float(COLLEGE_PRIORITY.get(selected_req.college, 0.5))
-                    payment_norm = 0.0
-                    if isinstance(selected_req.payment_status, str):
-                        status_text = selected_req.payment_status.strip().lower()
-                        if status_text in {"paid", "settled", "complete", "cleared", "yes", "y", "true", "1"}:
-                            payment_norm = 1.0
-                    else:
-                        payment_norm = 1.0 if bool(selected_req.payment_status) else 0.0
-                    urgency_norm = float(selected_req.urgency) / 10.0 if engine.urgency else 0.0
-
-                    scores_map = {
-                        "completeness_of_requirements": completeness_norm,
-                        "submission_time": submission_norm,
-                        "document_type": doc_norm,
-                        "requester_status": requester_norm,
-                        "college_affiliation": college_norm,
-                        "payment_status": payment_norm,
-                        "urgency": urgency_norm,
-                    }
-
-                    total_raw = 0.0
-                    for k, w in engine.priority_weights.items():
-                        if k == "urgency" and not engine.urgency:
-                            continue
-                        val = scores_map.get(k, 0.0)
-                        contrib = float(w) * float(val)
-                        total_raw += contrib
-                        contrib_rows.append(
-                            {
-                                "Stage": label,
-                                "Criterion": k,
-                                "Weight": round(float(w), 6),
-                                "Feature": round(float(val), 6),
-                                "Contribution": round(float(contrib), 6),
-                            }
-                        )
-
-                    contrib_rows.append(
-                        {"Stage": label, "Criterion": "TOTAL", "Weight": "-", "Feature": "-", "Contribution": round(total_raw, 6)}
-                    )
-
-                if contrib_rows:
-                    contrib_df = pd.DataFrame(contrib_rows)
-                    render_theme_table(contrib_df)
+                st.write(dict(sorted(
+                    engine.priority_weights.items(),
+                    key=lambda item: (-float(item[1]), format_criterion_label(item[0])),
+                )))
         else:
             st.write("No stage timestamps available.")
 
@@ -3026,7 +4167,132 @@ if st.session_state.comparison_df is not None and comparison_details:
 # EXPORT TOOLS
 # ============================================================================
 
-st.header("Export and Reproducibility")
+st.header("Export Tools")
+
+
+def format_export_datetime(value: Any) -> Optional[str]:
+    """Keep exported timestamps readable, sortable, and importable."""
+    if value in (None, "", "-"):
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            dt = datetime.fromisoformat(str(value))
+        except Exception:
+            return str(value)
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def build_request_dataset_xlsx(df: pd.DataFrame) -> bytes:
+    """Create an Excel version with readable column widths."""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.utils import get_column_letter
+    except Exception as exc:
+        raise RuntimeError("Excel export requires openpyxl. Install it with: pip install openpyxl") from exc
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Request Dataset"
+
+    headers = list(df.columns)
+    worksheet.append(headers)
+    for _, row in df.fillna("").iterrows():
+        worksheet.append([row.get(header, "") for header in headers])
+
+    header_fill = PatternFill("solid", fgColor="EDE7F6")
+    for cell in worksheet[1]:
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    width_by_column = {
+        "request_id": 14,
+        "source": 12,
+        "college": 10,
+        "document_type": 46,
+        "requester_type": 22,
+        "urgency": 10,
+        "submission_time": 20,
+        "requirements_incomplete": 24,
+        "requirements_partial": 22,
+        "requirements_complete": 24,
+        "payment_unpaid": 20,
+        "payment_paid": 20,
+        "ready_time": 20,
+        "assignment_time": 20,
+        "completion_time": 20,
+    }
+    for col_index, header in enumerate(headers, start=1):
+        width = width_by_column.get(header, min(max(len(str(header)) + 4, 12), 28))
+        worksheet.column_dimensions[get_column_letter(col_index)].width = width
+
+    for row in worksheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=False)
+
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+request_dataset_rows = []
+for item in results.get("generated_requests", []):
+    submission_time = item.get("submission_time")
+    requirements_partial_time = item.get("requirements_partial_time")
+    requirements_complete_time = item.get("requirements_complete_time")
+    payment_time = item.get("payment_time")
+    request_dataset_rows.append(
+        {
+            "request_id": item.get("request_id"),
+            "source": "custom" if item.get("is_custom") else "generated",
+            "college": item.get("college"),
+            "document_type": item.get("document_type"),
+            "requester_type": item.get("requester_type"),
+            "urgency": item.get("urgency"),
+            "submission_time": format_export_datetime(submission_time),
+
+            # Requirement lifecycle as event timestamps.
+            "requirements_incomplete": format_export_datetime(submission_time),
+            "requirements_partial": format_export_datetime(requirements_partial_time),
+            "requirements_complete": format_export_datetime(requirements_complete_time),
+
+            # Payment lifecycle as event timestamps.
+            "payment_unpaid": format_export_datetime(submission_time) if payment_time else None,
+            "payment_paid": format_export_datetime(payment_time),
+
+            "ready_time": format_export_datetime(item.get("ready_time")),
+            "assignment_time": format_export_datetime(item.get("assignment_time")),
+            "completion_time": format_export_datetime(item.get("completion_time")),
+        }
+    )
+
+if request_dataset_rows:
+    request_dataset_df = pd.DataFrame(request_dataset_rows)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    st.download_button(
+        "Download Request Dataset CSV",
+        data=request_dataset_df.to_csv(index=False),
+        file_name=f"request_dataset_{timestamp}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+    try:
+        st.download_button(
+            "Download Request Dataset Excel",
+            data=build_request_dataset_xlsx(request_dataset_df),
+            file_name=f"request_dataset_{timestamp}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    except RuntimeError as exc:
+        st.caption(str(exc))
 
 if engine.completed:
     export_df = pd.DataFrame(
@@ -3041,9 +4307,9 @@ if engine.completed:
                     4,
                 ),
                 "payment_status": getattr(req, "payment_status", "-"),
-                "submission_time": req.submission_time.isoformat(),
-                "assignment_time": req.assignment_time.isoformat() if req.assignment_time else None,
-                "completion_time": req.completion_time.isoformat() if req.completion_time else None,
+                "submission_time": format_export_datetime(req.submission_time),
+                "assignment_time": format_export_datetime(req.assignment_time),
+                "completion_time": format_export_datetime(req.completion_time),
                 "queue_wait_hours": round((req.get_waiting_time_minutes() or 0.0) / 60.0, 4),
                 "turnaround_days": round(req.get_turnaround_time_minutes() / 1440.0, 4),
                 "assigned_staff": req.assigned_staff,
@@ -3064,7 +4330,6 @@ if engine.completed:
 if st.session_state.last_run_config:
     config_json = {
         "generated_at": datetime.now().isoformat(),
-        "seed_used": results.get("seed_used"),
         "scheduler_type": results.get("scheduler_type"),
         "allocator_type": results.get("allocator_type"),
         "mode": "custom_sliders",
